@@ -2,172 +2,216 @@
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
-import Faq from "./models/Faq.js";   // 👈 FAQ model
+import Faq from "./models/Faq.js";
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// =============================
+// ======================
 // MongoDB connection
-// =============================
+// ======================
 const mongoURI = process.env.MONGODB_URI;
-mongoose.connect(mongoURI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => console.log("✅ MongoDB Connected"))
-.catch((err) => console.error("❌ MongoDB connection error:", err));
+mongoose
+  .connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch((err) => console.error("❌ MongoDB connection error:", err));
 
-// =============================
-// Student Schema + Model
-// =============================
+// ======================
+// Student Schema
+// ======================
 const studentSchema = new mongoose.Schema({
   studentId: { type: String, required: true, unique: true },
   name: String,
   feesPending: Number,
   scholarships: [{ course: String }],
-  interests: [String]
+  interests: [String],
 });
 const Student = mongoose.model("Student", studentSchema);
 
-// =============================
-// Health Route
-// =============================
+// ======================
+// Health Check
+// ======================
 app.get("/", (req, res) => res.send("Student Support Backend is Running 🚀"));
 
-// =============================
-// Student CRUD APIs
-// =============================
+// ======================
+// Student Routes
+// ======================
 app.get("/students", async (req, res) => {
-  const students = await Student.find();
-  res.json(students);
+  try {
+    const students = await Student.find();
+    res.json(students);
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 app.get("/students/:id", async (req, res) => {
-  const student = await Student.findOne({ studentId: req.params.id });
-  if (!student) return res.status(404).json({ error: "Student not found" });
-  res.json(student);
+  try {
+    const student = await Student.findOne({ studentId: req.params.id });
+    if (!student) return res.status(404).json({ error: "Student not found" });
+    res.json(student);
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 app.post("/students", async (req, res) => {
-  const { studentId, name, feesPending = 0, scholarships = [], interests = [] } = req.body;
-  const exists = await Student.findOne({ studentId });
-  if (exists) return res.status(409).json({ error: "Student already exists" });
+  try {
+    const { studentId, name, feesPending = 0, scholarships = [], interests = [] } = req.body;
+    if (!studentId || !name) return res.status(400).json({ error: "studentId and name required" });
 
-  const student = new Student({ studentId, name, feesPending, scholarships, interests });
-  await student.save();
-  res.status(201).json({ message: "Student created", student });
+    const exists = await Student.findOne({ studentId });
+    if (exists) return res.status(409).json({ error: "Student already exists" });
+
+    const student = new Student({ studentId, name, feesPending, scholarships, interests });
+    await student.save();
+    res.status(201).json({ message: "Student created", student });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 app.put("/students/:id", async (req, res) => {
-  const student = await Student.findOneAndUpdate(
-    { studentId: req.params.id },
-    { $set: req.body },
-    { new: true }
-  );
-  if (!student) return res.status(404).json({ error: "Student not found" });
-  res.json({ message: "Updated", student });
+  try {
+    const student = await Student.findOneAndUpdate({ studentId: req.params.id }, req.body, { new: true });
+    if (!student) return res.status(404).json({ error: "Student not found" });
+    res.json({ message: "Updated", student });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 app.delete("/students/:id", async (req, res) => {
-  const deleted = await Student.findOneAndDelete({ studentId: req.params.id });
-  if (!deleted) return res.status(404).json({ error: "Student not found" });
-  res.json({ message: "Deleted", student: deleted });
+  try {
+    const deleted = await Student.findOneAndDelete({ studentId: req.params.id });
+    if (!deleted) return res.status(404).json({ error: "Student not found" });
+    res.json({ message: "Deleted", student: deleted });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
-// =============================
+// ======================
 // FAQ Routes
-// =============================
-
-// 👉 Seed FAQs (run once, then remove/comment)
+// ======================
 app.post("/seed-faqs", async (req, res) => {
   try {
-    const docs = [
+    const faqs = [
       {
         category: "Finance",
         question: "How can I pay my pending fees?",
-        answer: "You can pay fees via the official payment portal: https://payment-portal.com"
+        answer: "You can pay fees via the official payment portal: https://payment-portal.com",
       },
       {
         category: "Counseling",
         question: "How do I book a counseling session?",
-        answer: "Request a session using this form: https://college.com/counseling"
+        answer: "You can book via the student dashboard → Counseling tab.",
       },
       {
-        category: "Mentorship",
-        question: "How can I get a mentor in Computer Science?",
-        answer: "Request a mentor via the mentorship portal or ask the bot to connect you."
-      }
+        category: "Scholarship",
+        question: "What scholarships are available?",
+        answer: "Check the National Scholarship Portal or our in-app Scholarship Finder.",
+      },
     ];
-    await Faq.insertMany(docs);
-    return res.json({ message: "FAQs seeded", count: docs.length });
+
+    await Faq.deleteMany();
+    const result = await Faq.insertMany(faqs);
+
+    res.json({ message: "FAQs seeded", count: result.length });
   } catch (err) {
-    console.error("Seed FAQ error:", err);
-    return res.status(500).json({ error: "Failed to seed FAQs" });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-// Get all FAQs
 app.get("/faqs", async (req, res) => {
   try {
-    const faqs = await Faq.find().sort({ createdAt: -1 });
+    const faqs = await Faq.find();
     res.json(faqs);
   } catch (err) {
-    console.error("Get FAQs error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// Create FAQ
 app.post("/faqs", async (req, res) => {
   try {
-    const { category, question, answer } = req.body;
-    if (!category || !question || !answer) {
-      return res.status(400).json({ error: "category, question, and answer required" });
-    }
-    const faq = new Faq({ category, question, answer });
+    const faq = new Faq(req.body);
     await faq.save();
-    res.status(201).json(faq);
+    res.status(201).json({ message: "FAQ added", faq });
   } catch (err) {
-    console.error("Create FAQ error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// =============================
-// Webhook (basic placeholder)
-// =============================
+// ======================
+// Webhook (Dialogflow)
+// ======================
 app.post("/webhook", async (req, res) => {
   try {
     const intentName = req.body.queryResult.intent.displayName;
-    let responseText = "I can help with Fees, Counseling, Mentorship, Marketplace, or Distress support.";
+    const params = req.body.queryResult.parameters;
+    const userQuery = req.body.queryResult.queryText;
+    let responseText = "I'm not sure how to help with that.";
 
+    // Finance Intent
     if (intentName === "FinanceIntent") {
-      responseText = "Finance intent triggered (hooked into DB).";
+      const studentId = params.studentId;
+      const student = await Student.findOne({ studentId });
+      if (student) {
+        responseText = `Student ${student.name} has ₹${student.feesPending} pending fees.`;
+      } else {
+        responseText = "I couldn’t find fee details for this student.";
+      }
     }
-    if (intentName === "CounselingIntent") {
-      responseText = "Counseling intent triggered.";
+
+    // Counseling Intent
+    else if (intentName === "CounselingIntent") {
+      responseText =
+        "I understand you’re seeking counseling. A counselor will reach out soon. Meanwhile, would you like self-help resources on stress and mental health?";
     }
-    if (intentName === "DistressIntent") {
-      responseText = "Distress intent triggered.";
+
+    // Distress Intent
+    else if (intentName === "DistressIntent") {
+      console.log("🚨 Distress Alert:", userQuery);
+      responseText =
+        "I sense you’re in distress. You are not alone. I am notifying a counselor to contact you immediately. If it’s an emergency, please call the helpline: 1800-599-0019.";
     }
-    if (intentName === "MarketplaceIntent") {
-      responseText = "Marketplace intent triggered.";
+
+    // Marketplace Intent
+    else if (intentName === "MarketplaceIntent") {
+      responseText =
+        "Our marketplace currently has: used textbooks, calculators, and hostel essentials available. Would you like me to fetch the latest listings for you?";
     }
-    if (intentName === "MentorshipIntent") {
-      responseText = "Mentorship intent triggered.";
+
+    // Mentorship Intent
+    else if (intentName === "MentorshipIntent") {
+      responseText =
+        "We have mentors available in Computer Science, Mechanical, and Commerce. Please tell me your field of interest so I can match you with the right mentor.";
+    }
+
+    // Fallback → Try FAQ search
+    else {
+      const faq = await Faq.findOne({
+        question: { $regex: userQuery, $options: "i" },
+      });
+
+      if (faq) {
+        responseText = faq.answer;
+      } else {
+        responseText =
+          "Sorry, I didn’t quite get that. I can help with Finance, Counseling, Mentorship, Marketplace, or Scholarships.";
+      }
     }
 
     res.json({ fulfillmentText: responseText });
-  } catch (error) {
-    console.error("Webhook error:", error);
+  } catch (err) {
+    console.error("Webhook error:", err);
     res.json({ fulfillmentText: "Something went wrong. Please try again later." });
   }
 });
 
-// =============================
-// Start Server
-// =============================
+// ======================
+// Start server
+// ======================
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
