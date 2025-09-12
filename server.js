@@ -1,4 +1,4 @@
-// server.js (Full working version)
+// server.js (Full working version with Parents + Mentors APIs)
 
 import express from "express";
 import mongoose from "mongoose";
@@ -51,7 +51,7 @@ const Mentor = mongoose.model("Mentor", mentorSchema);
 app.get("/", (req, res) => res.send("🚀 Student Support Backend is Running"));
 
 // =====================
-// CRUD APIs
+// Student APIs
 // =====================
 app.post("/students", async (req, res) => {
   try {
@@ -68,6 +68,62 @@ app.get("/students", async (req, res) => {
   res.json(students);
 });
 
+app.get("/students/:id", async (req, res) => {
+  try {
+    const student = await Student.findOne({ studentId: req.params.id });
+    if (!student) return res.status(404).json({ error: "Student not found" });
+    res.json(student);
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// =====================
+// Parent APIs
+// =====================
+app.post("/parents", async (req, res) => {
+  try {
+    const parent = new Parent(req.body);
+    await parent.save();
+    res.status(201).json(parent);
+  } catch (err) {
+    res.status(500).json({ error: "Error creating parent" });
+  }
+});
+
+app.get("/parents/:id", async (req, res) => {
+  try {
+    const parent = await Parent.findOne({ parentId: req.params.id });
+    if (!parent) return res.status(404).json({ error: "Parent not found" });
+    res.json(parent);
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// =====================
+// Mentor APIs
+// =====================
+app.post("/mentors", async (req, res) => {
+  try {
+    const mentor = new Mentor(req.body);
+    await mentor.save();
+    res.status(201).json(mentor);
+  } catch (err) {
+    res.status(500).json({ error: "Error creating mentor" });
+  }
+});
+
+app.get("/mentors/:id", async (req, res) => {
+  try {
+    const mentor = await Mentor.findOne({ mentorId: req.params.id });
+    if (!mentor) return res.status(404).json({ error: "Mentor not found" });
+    res.json(mentor);
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // =====================
 // Dialogflow Webhook
 // =====================
@@ -81,11 +137,9 @@ app.post("/webhook", async (req, res) => {
     if (intentName === "FinanceIntent") {
       const studentId = params.studentId;
       const student = await Student.findOne({ studentId });
-      if (student) {
-        responseText = `Student ${student.name} has ₹${student.feesPending} pending fees.`;
-      } else {
-        responseText = "I couldn’t find fee details for this student.";
-      }
+      responseText = student
+        ? `Student ${student.name} has ₹${student.feesPending} pending fees.`
+        : "I couldn’t find fee details for this student.";
     }
 
     // ===== Counseling Intent =====
@@ -96,12 +150,11 @@ app.post("/webhook", async (req, res) => {
 
     // ===== Distress Intent =====
     else if (intentName === "DistressIntent") {
-      const distressLog = {
+      console.log("🚨 Distress Alert:", {
         studentId: params.studentId || "unknown",
         message: req.body.queryResult.queryText,
         timestamp: new Date(),
-      };
-      console.log("🚨 Distress Alert:", distressLog);
+      });
       responseText =
         "I sense you’re in distress. You are not alone. A counselor will contact you immediately. If it’s an emergency, please call the helpline: 1800-599-0019.";
     }
@@ -124,11 +177,9 @@ app.post("/webhook", async (req, res) => {
       const parent = await Parent.findOne({ parentId });
       if (parent) {
         const student = await Student.findOne({ studentId: parent.childId });
-        if (student) {
-          responseText = `Parent ${parentId}, your child ${student.name} has attendance ${student.attendance}% and marks ${student.marks}. Fees pending: ₹${student.feesPending}.`;
-        } else {
-          responseText = "I couldn’t find details for the child.";
-        }
+        responseText = student
+          ? `Parent ${parentId}, your child ${student.name} has attendance ${student.attendance}% and marks ${student.marks}. Fees pending: ₹${student.feesPending}.`
+          : "I couldn’t find details for the child.";
       } else {
         responseText = "I couldn’t find details for that parent ID.";
       }
@@ -138,16 +189,13 @@ app.post("/webhook", async (req, res) => {
     else if (intentName === "MentorStatusIntent") {
       const mentorId = params.mentorId || params.MentorID;
       const mentor = await Mentor.findOne({ mentorId });
-      if (mentor) {
-        responseText = `Mentor ${mentorId}, you have ${mentor.mentees.length} mentees: ${mentor.mentees.join(
-          ", "
-        )}.`;
-      } else {
-        responseText = "I couldn’t find details for that mentor ID.";
-      }
+      responseText = mentor
+        ? `Mentor ${mentorId}, you have ${mentor.mentees.length} mentees: ${mentor.mentees.join(
+            ", "
+          )}.`
+        : "I couldn’t find details for that mentor ID.";
     }
 
-    // ===== Default =====
     res.json({ fulfillmentText: responseText });
   } catch (error) {
     console.error("Webhook error:", error);
