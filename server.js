@@ -1,236 +1,144 @@
-// server.js (students + parents + mentors + improved responses + APIs)
+// server.js
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
+import Student from "./models/Student.js"; // your Student model
+import Faq from "./models/Faq.js"; // FAQ model (optional, for later)
 
+// Initialize
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// ==================
-// MongoDB connection
-// ==================
+// MongoDB connection (Render -> Environment Variables -> MONGODB_URI)
 const mongoURI = process.env.MONGODB_URI;
 mongoose
   .connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log("✅ MongoDB Connected"))
   .catch((err) => console.error("❌ MongoDB connection error:", err));
 
-// ==================
-// Student Schema
-// ==================
-const studentSchema = new mongoose.Schema({
-  studentId: { type: String, required: true, unique: true },
-  name: String,
-  feesPending: Number,
-  marks: Number,
-  attendance: Number,
-  scholarships: [{ course: String }],
-  interests: [String],
+// ------------------- Health Check -------------------
+app.get("/", (req, res) => {
+  res.type("text/plain"); // Force plain text response
+  res.send("Student Support Backend is Running 🚀");
 });
-const Student = mongoose.model("Student", studentSchema);
 
-// ==================
-// Parent Schema
-// ==================
-const parentSchema = new mongoose.Schema({
-  parentId: { type: String, required: true, unique: true },
-  name: String,
-  relation: String, // Father, Mother, etc.
-  studentId: { type: String, required: true }, // linked student
-});
-const Parent = mongoose.model("Parent", parentSchema);
+// ------------------- Students API -------------------
 
-// ==================
-// Mentor Schema
-// ==================
-const mentorSchema = new mongoose.Schema({
-  mentorId: { type: String, required: true, unique: true },
-  name: String,
-  field: String, // e.g., Computer Science
-  mentees: [String], // list of studentIds
-});
-const Mentor = mongoose.model("Mentor", mentorSchema);
-
-// ==================
-// Health Route
-// ==================
-app.get("/", (req, res) => res.send("Student Support Backend is Running 🚀"));
-
-// ==================
-// Mentor APIs
-// ==================
-
-// Create a new mentor
-app.post("/mentors", async (req, res) => {
+// GET all students
+app.get("/students", async (req, res) => {
   try {
-    const { mentorId, name, field, mentees = [] } = req.body;
-    if (!mentorId || !name || !field)
-      return res.status(400).json({ error: "mentorId, name, and field required" });
-
-    const exists = await Mentor.findOne({ mentorId });
-    if (exists) return res.status(409).json({ error: "Mentor already exists" });
-
-    const mentor = new Mentor({ mentorId, name, field, mentees });
-    await mentor.save();
-    res.status(201).json({ message: "Mentor created", mentor });
+    const students = await Student.find();
+    res.json(students);
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// Get all mentors
-app.get("/mentors", async (req, res) => {
+// GET student by ID
+app.get("/students/:id", async (req, res) => {
   try {
-    const mentors = await Mentor.find();
-    res.json(mentors);
+    const student = await Student.findOne({ studentId: req.params.id });
+    if (!student) return res.status(404).json({ error: "Student not found" });
+    res.json(student);
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// Get mentor by ID
-app.get("/mentors/:id", async (req, res) => {
+// CREATE new student
+app.post("/students", async (req, res) => {
   try {
-    const mentor = await Mentor.findOne({ mentorId: req.params.id });
-    if (!mentor) return res.status(404).json({ error: "Mentor not found" });
-    res.json(mentor);
+    const { studentId, name, feesPending = 0, scholarships = [], interests = [] } = req.body;
+    if (!studentId || !name) return res.status(400).json({ error: "studentId and name required" });
+
+    const exists = await Student.findOne({ studentId });
+    if (exists) return res.status(409).json({ error: "Student already exists" });
+
+    const student = new Student({ studentId, name, feesPending, scholarships, interests });
+    await student.save();
+    res.status(201).json({ message: "Student created", student });
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// Get mentor's mentee status
-app.get("/mentors/:id/status", async (req, res) => {
+// UPDATE student
+app.put("/students/:id", async (req, res) => {
   try {
-    const mentor = await Mentor.findOne({ mentorId: req.params.id });
-    if (!mentor) return res.status(404).json({ error: "Mentor not found" });
-
-    if (mentor.mentees.length === 0) {
-      return res.json({ message: "No mentees assigned to this mentor." });
-    }
-
-    const students = await Student.find({ studentId: { $in: mentor.mentees } });
-    res.json({
-      mentor: mentor.name,
-      field: mentor.field,
-      mentees: students.map((s) => ({
-        name: s.name,
-        studentId: s.studentId,
-        feesPending: s.feesPending,
-        attendance: s.attendance,
-        marks: s.marks,
-      })),
-    });
+    const updates = req.body;
+    const student = await Student.findOneAndUpdate({ studentId: req.params.id }, { $set: updates }, { new: true });
+    if (!student) return res.status(404).json({ error: "Student not found" });
+    res.json({ message: "Updated", student });
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// ==================
-// Dialogflow Webhook
-// ==================
+// DELETE student
+app.delete("/students/:id", async (req, res) => {
+  try {
+    const deleted = await Student.findOneAndDelete({ studentId: req.params.id });
+    if (!deleted) return res.status(404).json({ error: "Student not found" });
+    res.json({ message: "Deleted", student: deleted });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ------------------- Webhook (Dialogflow) -------------------
 app.post("/webhook", async (req, res) => {
   try {
-    const intentName = req.body.queryResult.intent.displayName;
-    const params = req.body.queryResult.parameters || {};
-    let responseText = "I’m not sure how to help with that.";
+    const body = req.body;
 
-    // Finance Intent (Student)
+    // Defensive fallback
+    if (!body.queryResult) {
+      return res.type("text/plain").send("Webhook called but no queryResult found.");
+    }
+
+    const intentName = body.queryResult.intent.displayName;
+    const params = body.queryResult.parameters || {};
+    let responseText = "I'm not sure how to help with that.";
+
+    // FinanceIntent
     if (intentName === "FinanceIntent") {
-      const studentId = params.studentId?.toUpperCase();
-      if (!studentId) {
-        responseText = "Please provide your Student ID (e.g., STU001) so I can check the fees.";
+      const studentId = params.studentId?.toString().toUpperCase();
+      const student = await Student.findOne({ studentId });
+      if (student) {
+        responseText = `Student ${student.name} has ₹${student.feesPending} pending fees.`;
       } else {
-        const student = await Student.findOne({ studentId });
-        if (student) {
-          responseText = `Hey ${student.name}, I checked your record 📂. You currently have ₹${student.feesPending} pending fees. Would you like me to also check scholarships that can help reduce it?`;
-        } else {
-          responseText = `I couldn’t find details for Student ID ${studentId}. Please double-check and try again.`;
-        }
+        responseText = "I couldn’t find fee details for this student.";
       }
     }
 
-    // Parent Status Intent
-    else if (intentName === "ParentStatusIntent") {
-      const parentId = params.parentId?.toUpperCase();
-      if (!parentId) {
-        responseText = "Please provide your Parent ID so I can check your child’s status.";
-      } else {
-        const parent = await Parent.findOne({ parentId });
-        if (!parent) {
-          responseText = `I couldn’t find details for Parent ID ${parentId}.`;
-        } else {
-          const student = await Student.findOne({ studentId: parent.studentId });
-          if (student) {
-            responseText = `Hello ${parent.name} (${parent.relation}), your child ${student.name} has ₹${student.feesPending} pending fees, ${student.attendance}% attendance, and scored ${student.marks} marks.`;
-          } else {
-            responseText = "Linked student record not found.";
-          }
-        }
-      }
-    }
-
-    // Mentor Status Intent
-    else if (intentName === "MentorStatusIntent") {
-      const mentorId = params.mentorId?.toUpperCase();
-      if (!mentorId) {
-        responseText = "Please provide your Mentor ID so I can check your mentees’ status.";
-      } else {
-        const mentor = await Mentor.findOne({ mentorId });
-        if (!mentor) {
-          responseText = `I couldn’t find details for Mentor ID ${mentorId}.`;
-        } else {
-          if (mentor.mentees.length === 0) {
-            responseText = `Mentor ${mentor.name}, you currently have no assigned mentees.`;
-          } else {
-            const students = await Student.find({ studentId: { $in: mentor.mentees } });
-            if (students.length === 0) {
-              responseText = `No records found for your mentees.`;
-            } else {
-              const menteeDetails = students
-                .map(
-                  (s) =>
-                    `${s.name} → Fees Pending: ₹${s.feesPending}, Attendance: ${s.attendance}%, Marks: ${s.marks}`
-                )
-                .join("\n");
-              responseText = `Hello ${mentor.name} 👩‍🏫 (Field: ${mentor.field}), here are your mentees’ details:\n${menteeDetails}`;
-            }
-          }
-        }
-      }
-    }
-
-    // Counseling Intent
+    // CounselingIntent
     else if (intentName === "CounselingIntent") {
-      responseText =
-        "I understand you’re seeking counseling 💬. A counselor will reach out shortly. Meanwhile, would you like me to share some self-help resources on stress and mental health?";
+      responseText = "I understand you’re seeking counseling. A counselor will reach out soon. Meanwhile, would you like self-help resources on stress and mental health?";
     }
 
-    // Distress Intent
+    // DistressIntent
     else if (intentName === "DistressIntent") {
-      responseText =
-        "⚠️ I hear you’re going through something tough. You are not alone. I’m notifying a counselor immediately. If this is an emergency, please call the helpline: 1800-599-0019. Would you like me to also send calming self-help tips?";
+      const distressLog = {
+        studentId: params.studentId || "unknown",
+        message: body.queryResult.queryText,
+        timestamp: new Date(),
+      };
+      console.log("🚨 Distress Alert:", distressLog);
+
+      responseText = "I sense you’re in distress. You are not alone. I am notifying a counselor to contact you immediately. If it’s an emergency, please call the helpline: 1800-599-0019.";
     }
 
-    // Marketplace Intent
+    // MarketplaceIntent
     else if (intentName === "MarketplaceIntent") {
-      responseText =
-        "🛒 Our marketplace currently has used textbooks, calculators, and hostel essentials available. Do you want me to fetch the latest listings for you?";
+      responseText = "Our marketplace currently has: used textbooks, calculators, and hostel essentials. Would you like me to fetch the latest listings for you?";
     }
 
-    // Mentorship Intent (Student side)
+    // MentorshipIntent
     else if (intentName === "MentorshipIntent") {
-      responseText =
-        "👩‍🏫 We have mentors in Computer Science, Mechanical, and Commerce. Which area excites you the most so I can match you with the right mentor?";
+      responseText = "We have mentors available in Computer Science, Mechanical, and Commerce. Please tell me your field of interest so I can match you with the right mentor.";
     }
 
-    // Fallback Intent
-    else if (intentName === "Default Fallback Intent") {
-      responseText =
-        "🤔 I didn’t quite get that. But I can help with **fees, scholarships, counseling, mentorship, or the student marketplace**. Which one would you like to explore?";
-    }
-
+    // Send response back
     res.json({ fulfillmentText: responseText });
   } catch (error) {
     console.error("Webhook error:", error);
@@ -238,8 +146,6 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// ==================
-// Start Server
-// ==================
+// ------------------- Start Server -------------------
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
