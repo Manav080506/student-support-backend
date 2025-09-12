@@ -1,4 +1,4 @@
-// server.js (students + parents + mentors + improved responses)
+// server.js (students + parents + mentors + improved responses + APIs)
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
@@ -56,6 +56,76 @@ const Mentor = mongoose.model("Mentor", mentorSchema);
 // Health Route
 // ==================
 app.get("/", (req, res) => res.send("Student Support Backend is Running 🚀"));
+
+// ==================
+// Mentor APIs
+// ==================
+
+// Create a new mentor
+app.post("/mentors", async (req, res) => {
+  try {
+    const { mentorId, name, field, mentees = [] } = req.body;
+    if (!mentorId || !name || !field)
+      return res.status(400).json({ error: "mentorId, name, and field required" });
+
+    const exists = await Mentor.findOne({ mentorId });
+    if (exists) return res.status(409).json({ error: "Mentor already exists" });
+
+    const mentor = new Mentor({ mentorId, name, field, mentees });
+    await mentor.save();
+    res.status(201).json({ message: "Mentor created", mentor });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Get all mentors
+app.get("/mentors", async (req, res) => {
+  try {
+    const mentors = await Mentor.find();
+    res.json(mentors);
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Get mentor by ID
+app.get("/mentors/:id", async (req, res) => {
+  try {
+    const mentor = await Mentor.findOne({ mentorId: req.params.id });
+    if (!mentor) return res.status(404).json({ error: "Mentor not found" });
+    res.json(mentor);
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Get mentor's mentee status
+app.get("/mentors/:id/status", async (req, res) => {
+  try {
+    const mentor = await Mentor.findOne({ mentorId: req.params.id });
+    if (!mentor) return res.status(404).json({ error: "Mentor not found" });
+
+    if (mentor.mentees.length === 0) {
+      return res.json({ message: "No mentees assigned to this mentor." });
+    }
+
+    const students = await Student.find({ studentId: { $in: mentor.mentees } });
+    res.json({
+      mentor: mentor.name,
+      field: mentor.field,
+      mentees: students.map((s) => ({
+        name: s.name,
+        studentId: s.studentId,
+        feesPending: s.feesPending,
+        attendance: s.attendance,
+        marks: s.marks,
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
 
 // ==================
 // Dialogflow Webhook
