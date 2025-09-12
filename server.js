@@ -24,10 +24,28 @@ const studentSchema = new mongoose.Schema({
   studentId: { type: String, required: true, unique: true },
   name: String,
   feesPending: Number,
+  marks: Number,
+  attendance: Number,
   scholarships: [{ course: String }],
   interests: [String],
 });
 const Student = mongoose.model("Student", studentSchema);
+
+// ======================
+// Parent Schema
+// ======================
+const parentSchema = new mongoose.Schema({
+  parentId: { type: String, required: true, unique: true },
+  name: String,
+  relation: String, // e.g., Father, Mother
+  studentId: { type: String, required: true }, // linked student
+});
+const Parent = mongoose.model("Parent", parentSchema);
+
+// ======================
+// Ensure text index for FAQ fuzzy search
+// ======================
+Faq.schema.index({ question: "text", answer: "text" });
 
 // ======================
 // Health Check
@@ -35,109 +53,56 @@ const Student = mongoose.model("Student", studentSchema);
 app.get("/", (req, res) => res.send("Student Support Backend is Running 🚀"));
 
 // ======================
-// Student Routes
+// Parent Routes
 // ======================
-app.get("/students", async (req, res) => {
+
+// Create parent
+app.post("/parents", async (req, res) => {
   try {
-    const students = await Student.find();
-    res.json(students);
+    const { parentId, name, relation, studentId } = req.body;
+    if (!parentId || !name || !studentId)
+      return res.status(400).json({ error: "parentId, name, studentId required" });
+
+    const exists = await Parent.findOne({ parentId });
+    if (exists) return res.status(409).json({ error: "Parent already exists" });
+
+    const parent = new Parent({ parentId, name, relation, studentId });
+    await parent.save();
+    res.status(201).json({ message: "Parent created", parent });
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }
 });
 
-app.get("/students/:id", async (req, res) => {
+// Get parent details
+app.get("/parents/:id", async (req, res) => {
   try {
-    const student = await Student.findOne({ studentId: req.params.id });
+    const parent = await Parent.findOne({ parentId: req.params.id });
+    if (!parent) return res.status(404).json({ error: "Parent not found" });
+    res.json(parent);
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Parent view student status
+app.get("/parents/:id/status", async (req, res) => {
+  try {
+    const parent = await Parent.findOne({ parentId: req.params.id });
+    if (!parent) return res.status(404).json({ error: "Parent not found" });
+
+    const student = await Student.findOne({ studentId: parent.studentId });
     if (!student) return res.status(404).json({ error: "Student not found" });
-    res.json(student);
-  } catch (err) {
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-app.post("/students", async (req, res) => {
-  try {
-    const { studentId, name, feesPending = 0, scholarships = [], interests = [] } = req.body;
-    if (!studentId || !name) return res.status(400).json({ error: "studentId and name required" });
+    const status = {
+      studentName: student.name,
+      feesPending: student.feesPending,
+      marks: student.marks,
+      attendance: student.attendance,
+      scholarships: student.scholarships,
+    };
 
-    const exists = await Student.findOne({ studentId });
-    if (exists) return res.status(409).json({ error: "Student already exists" });
-
-    const student = new Student({ studentId, name, feesPending, scholarships, interests });
-    await student.save();
-    res.status(201).json({ message: "Student created", student });
-  } catch (err) {
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-app.put("/students/:id", async (req, res) => {
-  try {
-    const student = await Student.findOneAndUpdate({ studentId: req.params.id }, req.body, { new: true });
-    if (!student) return res.status(404).json({ error: "Student not found" });
-    res.json({ message: "Updated", student });
-  } catch (err) {
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-app.delete("/students/:id", async (req, res) => {
-  try {
-    const deleted = await Student.findOneAndDelete({ studentId: req.params.id });
-    if (!deleted) return res.status(404).json({ error: "Student not found" });
-    res.json({ message: "Deleted", student: deleted });
-  } catch (err) {
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-// ======================
-// FAQ Routes
-// ======================
-app.post("/seed-faqs", async (req, res) => {
-  try {
-    const faqs = [
-      {
-        category: "Finance",
-        question: "How can I pay my pending fees?",
-        answer: "You can pay fees via the official payment portal: https://payment-portal.com",
-      },
-      {
-        category: "Counseling",
-        question: "How do I book a counseling session?",
-        answer: "You can book via the student dashboard → Counseling tab.",
-      },
-      {
-        category: "Scholarship",
-        question: "What scholarships are available?",
-        answer: "Check the National Scholarship Portal or our in-app Scholarship Finder.",
-      },
-    ];
-
-    await Faq.deleteMany();
-    const result = await Faq.insertMany(faqs);
-
-    res.json({ message: "FAQs seeded", count: result.length });
-  } catch (err) {
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-app.get("/faqs", async (req, res) => {
-  try {
-    const faqs = await Faq.find();
-    res.json(faqs);
-  } catch (err) {
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-app.post("/faqs", async (req, res) => {
-  try {
-    const faq = new Faq(req.body);
-    await faq.save();
-    res.status(201).json({ message: "FAQ added", faq });
+    res.json({ parent: parent.name, relation: parent.relation, student: status });
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }
@@ -153,7 +118,7 @@ app.post("/webhook", async (req, res) => {
     const userQuery = req.body.queryResult.queryText;
     let responseText = "I'm not sure how to help with that.";
 
-    // Finance Intent
+    // Finance Intent (student/parent)
     if (intentName === "FinanceIntent") {
       const studentId = params.studentId;
       const student = await Student.findOne({ studentId });
@@ -161,6 +126,22 @@ app.post("/webhook", async (req, res) => {
         responseText = `Student ${student.name} has ₹${student.feesPending} pending fees.`;
       } else {
         responseText = "I couldn’t find fee details for this student.";
+      }
+    }
+
+    // Parent Query Intent
+    else if (intentName === "ParentStatusIntent") {
+      const parentId = params.parentId;
+      const parent = await Parent.findOne({ parentId });
+      if (!parent) {
+        responseText = "Parent not found. Please check your Parent ID.";
+      } else {
+        const student = await Student.findOne({ studentId: parent.studentId });
+        if (student) {
+          responseText = `Hello ${parent.name} (${parent.relation}), your child ${student.name} has ₹${student.feesPending} pending fees, ${student.attendance}% attendance, and scored ${student.marks} marks.`;
+        } else {
+          responseText = "Linked student record not found.";
+        }
       }
     }
 
@@ -189,14 +170,15 @@ app.post("/webhook", async (req, res) => {
         "We have mentors available in Computer Science, Mechanical, and Commerce. Please tell me your field of interest so I can match you with the right mentor.";
     }
 
-    // Fallback → Try FAQ search
+    // Fallback → Fuzzy FAQ search
     else {
-      const faq = await Faq.findOne({
-        question: { $regex: userQuery, $options: "i" },
-      });
+      const faq = await Faq.findOne(
+        { $text: { $search: userQuery } },
+        { score: { $meta: "textScore" } }
+      ).sort({ score: { $meta: "textScore" } });
 
-      if (faq) {
-        responseText = faq.answer;
+      if (faq && faq.score >= 0.5) {
+        responseText = `Here’s what I found: ${faq.answer}`;
       } else {
         responseText =
           "Sorry, I didn’t quite get that. I can help with Finance, Counseling, Mentorship, Marketplace, or Scholarships.";
