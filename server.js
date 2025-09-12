@@ -7,7 +7,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// ✅ MongoDB connection
+// ✅ Connect to MongoDB (Render → Environment → MONGODB_URI)
 const mongoURI = process.env.MONGODB_URI;
 mongoose.connect(mongoURI, {
   useNewUrlParser: true,
@@ -32,7 +32,7 @@ app.get("/", (req, res) => {
   res.send("Student Support Backend is Running 🚀");
 });
 
-// All students
+// Get all students
 app.get("/students", async (req, res) => {
   try {
     const students = await Student.find();
@@ -42,7 +42,7 @@ app.get("/students", async (req, res) => {
   }
 });
 
-// Single student by ID
+// Get student by ID
 app.get("/students/:id", async (req, res) => {
   try {
     const student = await Student.findOne({ studentId: req.params.id });
