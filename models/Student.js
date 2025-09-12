@@ -5,6 +5,8 @@ const studentSchema = new mongoose.Schema({
   studentId: { type: String, required: true, unique: true },
   name: { type: String, required: true },
   feesPending: { type: Number, default: 0 },
+  marks: { type: Number, default: 0 },
+  attendance: { type: Number, default: 0 },
   scholarships: [{ course: String }],
   interests: [String],
 });
