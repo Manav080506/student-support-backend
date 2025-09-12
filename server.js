@@ -147,3 +147,75 @@ app.post("/webhook", async (req, res) => {
 // Start server
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+// server.js (Webhook section)
+app.post("/webhook", async (req, res) => {
+  try {
+    const intentName = req.body.queryResult.intent.displayName;
+    let responseText = "I'm not sure how to help with that.";
+
+    // ========================
+    // Finance Intent
+    // ========================
+    if (intentName === "FinanceIntent") {
+      const studentId = req.body.queryResult.parameters.studentId;
+      const student = await Student.findOne({ studentId });
+
+      if (student) {
+        responseText = `Student ${student.name} has ₹${student.feesPending} pending fees.`;
+      } else {
+        responseText = "I couldn’t find fee details for this student.";
+      }
+    }
+
+    // ========================
+    // Counseling Intent
+    // ========================
+    else if (intentName === "CounselingIntent") {
+      responseText =
+        "I understand you’re seeking counseling. A counselor will reach out soon. Meanwhile, would you like self-help resources on stress and mental health?";
+    }
+
+    // ========================
+    // Distress Intent
+    // ========================
+    else if (intentName === "DistressIntent") {
+      // log into DB for counselor follow-up
+      const distressLog = {
+        studentId: req.body.queryResult.parameters.studentId || "unknown",
+        message: req.body.queryResult.queryText,
+        timestamp: new Date(),
+      };
+      console.log("🚨 Distress Alert:", distressLog);
+
+      responseText =
+        "I sense you’re in distress. You are not alone. I am notifying a counselor to contact you immediately. If it’s an emergency, please call the helpline: 1800-599-0019.";
+    }
+
+    // ========================
+    // Marketplace Intent
+    // ========================
+    else if (intentName === "MarketplaceIntent") {
+      // Example static response (later you can fetch from DB)
+      responseText =
+        "Our marketplace currently has: used textbooks, calculators, and hostel essentials available. Would you like me to fetch the latest listings for you?";
+    }
+
+    // ========================
+    // Mentorship Intent
+    // ========================
+    else if (intentName === "MentorshipIntent") {
+      responseText =
+        "We have mentors available in Computer Science, Mechanical, and Commerce. Please tell me your field of interest so I can match you with the right mentor.";
+    }
+
+    // Send back to Dialogflow
+    res.json({
+      fulfillmentText: responseText,
+    });
+  } catch (error) {
+    console.error("Webhook error:", error);
+    res.json({
+      fulfillmentText: "Something went wrong. Please try again later.",
+    });
+  }
+});
