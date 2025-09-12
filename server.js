@@ -1,4 +1,4 @@
-// server.js (Full working version with Parents + Mentors APIs)
+// server.js (interactive + adaptive chatbot replies)
 
 import express from "express";
 import mongoose from "mongoose";
@@ -51,80 +51,6 @@ const Mentor = mongoose.model("Mentor", mentorSchema);
 app.get("/", (req, res) => res.send("🚀 Student Support Backend is Running"));
 
 // =====================
-// Student APIs
-// =====================
-app.post("/students", async (req, res) => {
-  try {
-    const student = new Student(req.body);
-    await student.save();
-    res.status(201).json(student);
-  } catch (err) {
-    res.status(500).json({ error: "Error creating student" });
-  }
-});
-
-app.get("/students", async (req, res) => {
-  const students = await Student.find();
-  res.json(students);
-});
-
-app.get("/students/:id", async (req, res) => {
-  try {
-    const student = await Student.findOne({ studentId: req.params.id });
-    if (!student) return res.status(404).json({ error: "Student not found" });
-    res.json(student);
-  } catch (err) {
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-// =====================
-// Parent APIs
-// =====================
-app.post("/parents", async (req, res) => {
-  try {
-    const parent = new Parent(req.body);
-    await parent.save();
-    res.status(201).json(parent);
-  } catch (err) {
-    res.status(500).json({ error: "Error creating parent" });
-  }
-});
-
-app.get("/parents/:id", async (req, res) => {
-  try {
-    const parent = await Parent.findOne({ parentId: req.params.id });
-    if (!parent) return res.status(404).json({ error: "Parent not found" });
-    res.json(parent);
-  } catch (err) {
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-// =====================
-// Mentor APIs
-// =====================
-app.post("/mentors", async (req, res) => {
-  try {
-    const mentor = new Mentor(req.body);
-    await mentor.save();
-    res.status(201).json(mentor);
-  } catch (err) {
-    res.status(500).json({ error: "Error creating mentor" });
-  }
-});
-
-app.get("/mentors/:id", async (req, res) => {
-  try {
-    const mentor = await Mentor.findOne({ mentorId: req.params.id });
-    if (!mentor) return res.status(404).json({ error: "Mentor not found" });
-    res.json(mentor);
-  } catch (err) {
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-// =====================
 // Dialogflow Webhook
 // =====================
 app.post("/webhook", async (req, res) => {
@@ -137,15 +63,23 @@ app.post("/webhook", async (req, res) => {
     if (intentName === "FinanceIntent") {
       const studentId = params.studentId;
       const student = await Student.findOne({ studentId });
-      responseText = student
-        ? `Student ${student.name} has ₹${student.feesPending} pending fees.`
-        : "I couldn’t find fee details for this student.";
+      if (student) {
+        const scholarshipText =
+          student.scholarships && student.scholarships.length > 0
+            ? `${student.scholarships.length} applied (${student.scholarships
+                .map((s) => s.course)
+                .join(", ")})`
+            : "No scholarships applied yet";
+
+        responseText = `💰 *Finance Summary*\n- Student: ${student.name}\n- Pending Fees: ₹${student.feesPending}\n- Scholarships: ${scholarshipText}\n\n👉 Options:\n1️⃣ Show Eligible Scholarships\n2️⃣ Show Fee Deadlines`;
+      } else {
+        responseText = "⚠️ I couldn’t find fee details for this student.";
+      }
     }
 
     // ===== Counseling Intent =====
     else if (intentName === "CounselingIntent") {
-      responseText =
-        "I understand you’re seeking counseling. A counselor will reach out soon. Meanwhile, would you like self-help resources on stress and mental health?";
+      responseText = `🧠 *Counseling Support*\nI understand you’re seeking guidance.\n✔ A counselor will be notified to contact you.\n✔ Meanwhile, here are self-help resources:\n- Stress management tips\n- Study-life balance guide\n\n👉 Options:\n1️⃣ Connect to Counselor\n2️⃣ Show Self-Help Resources`;
     }
 
     // ===== Distress Intent =====
@@ -155,20 +89,17 @@ app.post("/webhook", async (req, res) => {
         message: req.body.queryResult.queryText,
         timestamp: new Date(),
       });
-      responseText =
-        "I sense you’re in distress. You are not alone. A counselor will contact you immediately. If it’s an emergency, please call the helpline: 1800-599-0019.";
+      responseText = `🚨 *Distress Alert*\nI sense you’re in distress. You are not alone.\n✔ A counselor has been notified to contact you immediately.\n✔ If it’s urgent, please call the helpline: 📞 1800-599-0019\n\n👉 Options:\n1️⃣ Connect to Counselor Now\n2️⃣ Get Relaxation Resources`;
     }
 
     // ===== Marketplace Intent =====
     else if (intentName === "MarketplaceIntent") {
-      responseText =
-        "Our marketplace currently has used textbooks, calculators, and hostel essentials available. Would you like me to fetch the latest listings for you?";
+      responseText = `🛒 *Marketplace Listings*\nHere are some items available right now:\n- 📚 Used Textbooks (CS, Mechanical, Commerce)\n- 🧮 Calculators\n- 🛏 Hostel Essentials\n\n👉 Options:\n1️⃣ See Latest Listings\n2️⃣ Post an Item for Sale`;
     }
 
     // ===== Mentorship Intent =====
     else if (intentName === "MentorshipIntent") {
-      responseText =
-        "We have mentors available in Computer Science, Mechanical, and Commerce. Please tell me your field of interest so I can match you with the right mentor.";
+      responseText = `👨‍🏫 *Mentorship Available*\nWe have mentors in the following fields:\n- 💻 Computer Science\n- ⚙️ Mechanical Engineering\n- 📊 Commerce\n\n👉 Options:\n1️⃣ Connect to a Mentor\n2️⃣ View Mentor Profiles`;
     }
 
     // ===== Parent Status Intent =====
@@ -177,11 +108,19 @@ app.post("/webhook", async (req, res) => {
       const parent = await Parent.findOne({ parentId });
       if (parent) {
         const student = await Student.findOne({ studentId: parent.childId });
-        responseText = student
-          ? `Parent ${parentId}, your child ${student.name} has attendance ${student.attendance}% and marks ${student.marks}. Fees pending: ₹${student.feesPending}.`
-          : "I couldn’t find details for the child.";
+        if (student) {
+          responseText = `👨‍👩‍👦 *Parent Dashboard*\nParent ID: ${parentId}\nChild: ${student.name}\n\n📊 Attendance: ${
+            student.attendance ?? "Not updated"
+          }%\n📝 Marks: ${
+            student.marks ?? "Not updated"
+          }%\n💰 Fees Pending: ₹${
+            student.feesPending ?? 0
+          }\n\n👉 Options:\n1️⃣ View Scholarship Updates\n2️⃣ View Upcoming Deadlines`;
+        } else {
+          responseText = "⚠️ I couldn’t find details for the child.";
+        }
       } else {
-        responseText = "I couldn’t find details for that parent ID.";
+        responseText = "⚠️ I couldn’t find details for that parent ID.";
       }
     }
 
@@ -189,17 +128,27 @@ app.post("/webhook", async (req, res) => {
     else if (intentName === "MentorStatusIntent") {
       const mentorId = params.mentorId || params.MentorID;
       const mentor = await Mentor.findOne({ mentorId });
-      responseText = mentor
-        ? `Mentor ${mentorId}, you have ${mentor.mentees.length} mentees: ${mentor.mentees.join(
-            ", "
-          )}.`
-        : "I couldn’t find details for that mentor ID.";
+      if (mentor) {
+        if (mentor.mentees && mentor.mentees.length > 0) {
+          responseText = `👨‍🏫 *Mentor Dashboard*\nMentor ID: ${mentorId}\n\n📋 Assigned Mentees:\n${mentor.mentees
+            .map((m, i) => `${i + 1}. ${m}`)
+            .join(
+              "\n"
+            )}\n\n👉 Options:\n1️⃣ Show Performance Summary\n2️⃣ Send Message to Mentees`;
+        } else {
+          responseText = `👨‍🏫 Mentor ${mentorId}, you currently don’t have any assigned mentees.`;
+        }
+      } else {
+        responseText = "⚠️ I couldn’t find details for that mentor ID.";
+      }
     }
 
     res.json({ fulfillmentText: responseText });
   } catch (error) {
     console.error("Webhook error:", error);
-    res.json({ fulfillmentText: "Something went wrong. Please try again later." });
+    res.json({
+      fulfillmentText: "Something went wrong. Please try again later.",
+    });
   }
 });
 
