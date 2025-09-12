@@ -2,7 +2,7 @@
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
-import Faq from "./models/Faq.js";
+import Faq from "./models/Faq.js";   // 👈 FAQ model
 
 const app = express();
 app.use(express.json());
@@ -20,14 +20,14 @@ mongoose.connect(mongoURI, {
 .catch((err) => console.error("❌ MongoDB connection error:", err));
 
 // =============================
-// Schema + Model
+// Student Schema + Model
 // =============================
 const studentSchema = new mongoose.Schema({
   studentId: { type: String, required: true, unique: true },
   name: String,
   feesPending: Number,
   scholarships: [{ course: String }],
-  interests: [String],
+  interests: [String]
 });
 const Student = mongoose.model("Student", studentSchema);
 
@@ -37,17 +37,19 @@ const Student = mongoose.model("Student", studentSchema);
 app.get("/", (req, res) => res.send("Student Support Backend is Running 🚀"));
 
 // =============================
-// CRUD APIs
+// Student CRUD APIs
 // =============================
 app.get("/students", async (req, res) => {
   const students = await Student.find();
   res.json(students);
 });
+
 app.get("/students/:id", async (req, res) => {
   const student = await Student.findOne({ studentId: req.params.id });
   if (!student) return res.status(404).json({ error: "Student not found" });
   res.json(student);
 });
+
 app.post("/students", async (req, res) => {
   const { studentId, name, feesPending = 0, scholarships = [], interests = [] } = req.body;
   const exists = await Student.findOne({ studentId });
@@ -57,6 +59,7 @@ app.post("/students", async (req, res) => {
   await student.save();
   res.status(201).json({ message: "Student created", student });
 });
+
 app.put("/students/:id", async (req, res) => {
   const student = await Student.findOneAndUpdate(
     { studentId: req.params.id },
@@ -66,6 +69,7 @@ app.put("/students/:id", async (req, res) => {
   if (!student) return res.status(404).json({ error: "Student not found" });
   res.json({ message: "Updated", student });
 });
+
 app.delete("/students/:id", async (req, res) => {
   const deleted = await Student.findOneAndDelete({ studentId: req.params.id });
   if (!deleted) return res.status(404).json({ error: "Student not found" });
@@ -73,128 +77,92 @@ app.delete("/students/:id", async (req, res) => {
 });
 
 // =============================
-// Webhook for Dialogflow
+// FAQ Routes
+// =============================
+
+// 👉 Seed FAQs (run once, then remove/comment)
+app.post("/seed-faqs", async (req, res) => {
+  try {
+    const docs = [
+      {
+        category: "Finance",
+        question: "How can I pay my pending fees?",
+        answer: "You can pay fees via the official payment portal: https://payment-portal.com"
+      },
+      {
+        category: "Counseling",
+        question: "How do I book a counseling session?",
+        answer: "Request a session using this form: https://college.com/counseling"
+      },
+      {
+        category: "Mentorship",
+        question: "How can I get a mentor in Computer Science?",
+        answer: "Request a mentor via the mentorship portal or ask the bot to connect you."
+      }
+    ];
+    await Faq.insertMany(docs);
+    return res.json({ message: "FAQs seeded", count: docs.length });
+  } catch (err) {
+    console.error("Seed FAQ error:", err);
+    return res.status(500).json({ error: "Failed to seed FAQs" });
+  }
+});
+
+// Get all FAQs
+app.get("/faqs", async (req, res) => {
+  try {
+    const faqs = await Faq.find().sort({ createdAt: -1 });
+    res.json(faqs);
+  } catch (err) {
+    console.error("Get FAQs error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Create FAQ
+app.post("/faqs", async (req, res) => {
+  try {
+    const { category, question, answer } = req.body;
+    if (!category || !question || !answer) {
+      return res.status(400).json({ error: "category, question, and answer required" });
+    }
+    const faq = new Faq({ category, question, answer });
+    await faq.save();
+    res.status(201).json(faq);
+  } catch (err) {
+    console.error("Create FAQ error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// =============================
+// Webhook (basic placeholder)
 // =============================
 app.post("/webhook", async (req, res) => {
   try {
     const intentName = req.body.queryResult.intent.displayName;
-    let fulfillmentMessages = [];
+    let responseText = "I can help with Fees, Counseling, Mentorship, Marketplace, or Distress support.";
 
-    // Finance Intent
     if (intentName === "FinanceIntent") {
-      let studentId = req.body.queryResult.parameters.studentId;
-      if (studentId) {
-        studentId = studentId.toString().toUpperCase();
-        if (!studentId.startsWith("STU")) {
-          studentId = `STU${studentId.replace("STU", "")}`;
-        }
-      }
-
-      if (!studentId) {
-        fulfillmentMessages.push({ text: { text: ["Please provide your Student ID (e.g., STU001)."] } });
-      } else {
-        const student = await Student.findOne({ studentId });
-        if (student) {
-          fulfillmentMessages.push({
-            card: {
-              title: `Fee Details`,
-              subtitle: `${student.name} has ₹${student.feesPending} pending.`,
-              buttons: [
-                { text: "Pay Now", postback: "https://payment-portal.com" },
-                { text: "Check Scholarships", postback: "ScholarshipFinder" },
-              ],
-            },
-          });
-        } else {
-          fulfillmentMessages.push({ text: { text: ["I couldn’t find fee details for this student."] } });
-        }
-      }
+      responseText = "Finance intent triggered (hooked into DB).";
+    }
+    if (intentName === "CounselingIntent") {
+      responseText = "Counseling intent triggered.";
+    }
+    if (intentName === "DistressIntent") {
+      responseText = "Distress intent triggered.";
+    }
+    if (intentName === "MarketplaceIntent") {
+      responseText = "Marketplace intent triggered.";
+    }
+    if (intentName === "MentorshipIntent") {
+      responseText = "Mentorship intent triggered.";
     }
 
-    // Counseling Intent
-    else if (intentName === "CounselingIntent") {
-      fulfillmentMessages.push({
-        text: { text: ["I understand you’re seeking counseling."] },
-      });
-      fulfillmentMessages.push({
-        text: { text: ["Would you like me to connect you with a live counselor or share self-help resources?"] },
-      });
-      fulfillmentMessages.push({
-        quickReplies: {
-          title: "Choose an option:",
-          quickReplies: ["Connect me to counselor", "Share resources"],
-        },
-      });
-    }
-
-    // Distress Intent
-    else if (intentName === "DistressIntent") {
-      const distressLog = {
-        studentId: req.body.queryResult.parameters.studentId || "unknown",
-        message: req.body.queryResult.queryText,
-        timestamp: new Date(),
-      };
-      console.log("🚨 Distress Alert:", distressLog);
-
-      fulfillmentMessages.push({
-        text: {
-          text: [
-            "💙 I sense you’re in distress. You are not alone.",
-            "I’ve flagged this for our counselor team to reach out.",
-            "If it’s an emergency, please call the helpline: 1800-599-0019",
-          ],
-        },
-      });
-      fulfillmentMessages.push({
-        quickReplies: {
-          title: "Would you like me to share stress relief tips?",
-          quickReplies: ["Yes, show tips", "No, thanks"],
-        },
-      });
-    }
-
-    // Marketplace Intent
-    else if (intentName === "MarketplaceIntent") {
-      fulfillmentMessages.push({
-        card: {
-          title: "Campus Marketplace",
-          subtitle: "Currently available items:",
-          buttons: [
-            { text: "Books", postback: "Books section" },
-            { text: "Electronics", postback: "Electronics section" },
-            { text: "Hostel Essentials", postback: "Essentials section" },
-          ],
-        },
-      });
-    }
-
-    // Mentorship Intent
-    else if (intentName === "MentorshipIntent") {
-      fulfillmentMessages.push({
-        text: { text: ["We have mentors available in Computer Science, Mechanical, and Commerce."] },
-      });
-      fulfillmentMessages.push({
-        quickReplies: {
-          title: "Which stream are you interested in?",
-          quickReplies: ["Computer Science", "Mechanical", "Commerce"],
-        },
-      });
-    }
-
-    // Default fallback
-    else {
-      fulfillmentMessages.push({
-        text: { text: ["I can guide you in Finance, Counseling, Mentorship, Marketplace, or Distress support."] },
-      });
-    }
-
-    // Send back to Dialogflow
-    res.json({ fulfillmentMessages });
+    res.json({ fulfillmentText: responseText });
   } catch (error) {
     console.error("Webhook error:", error);
-    res.json({
-      fulfillmentText: "Something went wrong. Please try again later.",
-    });
+    res.json({ fulfillmentText: "Something went wrong. Please try again later." });
   }
 });
 
