@@ -7,9 +7,9 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// ===============================
+// ============================
 // MongoDB connection
-// ===============================
+// ============================
 const mongoURI = process.env.MONGODB_URI;
 mongoose
   .connect(mongoURI, {
@@ -19,9 +19,9 @@ mongoose
   .then(() => console.log("✅ MongoDB Connected"))
   .catch((err) => console.error("❌ MongoDB connection error:", err));
 
-// ===============================
+// ============================
 // Schema + model
-// ===============================
+// ============================
 const studentSchema = new mongoose.Schema({
   studentId: { type: String, required: true, unique: true },
   name: String,
@@ -31,14 +31,16 @@ const studentSchema = new mongoose.Schema({
 });
 const Student = mongoose.model("Student", studentSchema);
 
-// ===============================
-// Health Route
-// ===============================
-app.get("/", (req, res) => res.send("Student Support Backend is Running 🚀"));
+// ============================
+// Health Check
+// ============================
+app.get("/", (req, res) =>
+  res.send("Student Support Backend is Running 🚀")
+);
 
-// ===============================
-// CRUD Routes for Students
-// ===============================
+// ============================
+// CRUD APIs
+// ============================
 
 // READ - all students
 app.get("/students", async (req, res) => {
@@ -46,7 +48,6 @@ app.get("/students", async (req, res) => {
     const students = await Student.find();
     res.json(students);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -58,48 +59,29 @@ app.get("/students/:id", async (req, res) => {
     if (!student) return res.status(404).json({ error: "Student not found" });
     res.json(student);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// CREATE - add new student
+// CREATE - POST
 app.post("/students", async (req, res) => {
   try {
-    const {
-      studentId,
-      name,
-      feesPending = 0,
-      scholarships = [],
-      interests = [],
-    } = req.body;
-
+    const { studentId, name, feesPending = 0, scholarships = [], interests = [] } = req.body;
     if (!studentId || !name)
-      return res
-        .status(400)
-        .json({ error: "studentId and name are required" });
+      return res.status(400).json({ error: "studentId and name required" });
 
     const exists = await Student.findOne({ studentId });
-    if (exists)
-      return res.status(409).json({ error: "Student already exists" });
+    if (exists) return res.status(409).json({ error: "Student already exists" });
 
-    const student = new Student({
-      studentId,
-      name,
-      feesPending,
-      scholarships,
-      interests,
-    });
-
+    const student = new Student({ studentId, name, feesPending, scholarships, interests });
     await student.save();
     res.status(201).json({ message: "Student created", student });
   } catch (err) {
-    console.error("Error creating student:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// UPDATE - modify student
+// UPDATE - PUT
 app.put("/students/:id", async (req, res) => {
   try {
     const updates = req.body;
@@ -111,54 +93,42 @@ app.put("/students/:id", async (req, res) => {
     if (!student) return res.status(404).json({ error: "Student not found" });
     res.json({ message: "Updated", student });
   } catch (err) {
-    console.error("Error updating:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// DELETE - remove student
+// DELETE - DELETE
 app.delete("/students/:id", async (req, res) => {
   try {
-    const deleted = await Student.findOneAndDelete({
-      studentId: req.params.id,
-    });
-    if (!deleted)
-      return res.status(404).json({ error: "Student not found" });
+    const deleted = await Student.findOneAndDelete({ studentId: req.params.id });
+    if (!deleted) return res.status(404).json({ error: "Student not found" });
     res.json({ message: "Deleted", student: deleted });
   } catch (err) {
-    console.error("Error deleting:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// ===============================
+// ============================
 // Webhook for Dialogflow
-// ===============================
+// ============================
 app.post("/webhook", async (req, res) => {
   try {
     const intentName = req.body.queryResult.intent.displayName;
-    const params = req.body.queryResult.parameters || {};
     let responseText = "I'm not sure how to help with that.";
 
-    // Finance / Fees Intent
-    if (intentName === "CheckFees" || intentName === "FinanceIntent") {
-      const studentId = params.studentId;
+    // Finance Intent
+    if (intentName === "FinanceIntent") {
+      const studentId = req.body.queryResult.parameters.studentId;
       if (!studentId) {
-        responseText = "Please provide your student ID (e.g., STU001).";
+        responseText = "Please provide your Student ID to check finance details.";
       } else {
         const student = await Student.findOne({ studentId });
         if (student) {
-          responseText = `${student.name}, your pending fees are ₹${student.feesPending}.`;
+          responseText = `Student ${student.name} has ₹${student.feesPending} pending fees.`;
         } else {
-          responseText = `No record found for ${studentId}.`;
+          responseText = "I couldn’t find fee details for this student.";
         }
       }
-    }
-
-    // Scholarship Intent
-    else if (intentName === "ScholarshipFinder") {
-      responseText =
-        "I can search scholarships. Please tell me your course and family income.";
     }
 
     // Counseling Intent
@@ -170,7 +140,7 @@ app.post("/webhook", async (req, res) => {
     // Distress Intent
     else if (intentName === "DistressIntent") {
       const distressLog = {
-        studentId: params.studentId || "unknown",
+        studentId: req.body.queryResult.parameters.studentId || "unknown",
         message: req.body.queryResult.queryText,
         timestamp: new Date(),
       };
@@ -192,8 +162,10 @@ app.post("/webhook", async (req, res) => {
         "We have mentors available in Computer Science, Mechanical, and Commerce. Please tell me your field of interest so I can match you with the right mentor.";
     }
 
-    // Send response back to Dialogflow
-    res.json({ fulfillmentText: responseText });
+    // Send back response
+    res.json({
+      fulfillmentText: responseText,
+    });
   } catch (error) {
     console.error("Webhook error:", error);
     res.json({
@@ -202,8 +174,8 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// ===============================
-// Start Server
-// ===============================
+// ============================
+// Start server
+// ============================
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
