@@ -1,99 +1,43 @@
 // server.js
 import express from "express";
 import bodyParser from "body-parser";
-import { GoogleSpreadsheet } from "google-spreadsheet";
 
 const app = express();
 app.use(bodyParser.json());
 
-// ------------------ Google Sheets Setup ------------------
-const SHEET_ID = "1QoLAe1-n6-O62LQSYqgNB--jfS10IMubsObvU_e49rI"; // your sheet ID
-const API_KEY = "AIzaSyBUQSfcsfgBobgPVK4Kd6hc6fajcwTI8CI";       // your API key
-const doc = new GoogleSpreadsheet(SHEET_ID);
-
-async function getSheetResponse(userQuery) {
-  try {
-    await doc.useApiKey(API_KEY);
-    await doc.loadInfo();
-
-    const sheet = doc.sheetsByIndex[0]; // first sheet
-    const rows = await sheet.getRows();
-
-    const query = userQuery.toLowerCase();
-
-    for (let row of rows) {
-      const keyword = row.Keyword?.toLowerCase();
-      const answer = row.Answer;
-
-      if (keyword && query.includes(keyword)) {
-        return answer;
-      }
-    }
-    return null;
-  } catch (err) {
-    console.error("❌ Error reading sheet:", err);
-    return null;
-  }
-}
-
 // ------------------ Dummy Database ------------------
 const students = {
-  STU001: {
-    name: "Manav Runthala",
-    feesPending: 5000,
-    scholarships: ["Computer Science"],
-  },
-  STU002: {
-    name: "Daksh Beniwal",
-    feesPending: 3000,
-    scholarships: ["Mechanical Engineering"],
-  },
-  STU003: {
-    name: "Disha Binani",
-    feesPending: 0,
-    scholarships: ["Commerce"],
-  },
+  STU001: { name: "Manav Runthala", feesPending: 5000, scholarships: ["Computer Science"] },
+  STU002: { name: "Daksh Beniwal", feesPending: 3000, scholarships: ["Mechanical Engineering"] },
+  STU003: { name: "Disha Binani", feesPending: 0, scholarships: ["Commerce"] },
 };
 
 const parents = {
-  PARENT001: {
-    child: "Manav Runthala",
-    attendance: "85%",
-    marks: "80%",
-    feesPending: 5000,
-  },
+  PARENT001: { child: "Manav Runthala", attendance: "85%", marks: "80%", feesPending: 5000 },
 };
 
 const mentors = {
-  MENTOR001: {
-    mentees: ["STU001", "STU002"],
-  },
+  MENTOR001: { mentees: ["STU001", "STU002"] },
 };
 
 // ------------------ Helper ------------------
 function sendResponse(text) {
-  return {
-    fulfillmentText: text,
-    fulfillmentMessages: [{ text: { text: [text] } }],
-  };
+  return { fulfillmentText: text, fulfillmentMessages: [{ text: { text: [text] } }] };
 }
 
 // ------------------ Webhook ------------------
-app.post("/webhook", async (req, res) => {
-  const intent = req.body.queryResult.intent.displayName;
+app.post("/webhook", (req, res) => {
+  let intent = req.body.queryResult.intent.displayName;
   const params = req.body.queryResult.parameters;
+  const queryText = req.body.queryResult.queryText?.toLowerCase() || "";
 
   // ------------------ Finance ------------------
-  if (intent === "FinanceIntent") {
-    const studentId = params.studentId?.[0];
-    if (!studentId) {
-      return res.json(sendResponse("Please provide your Student ID (e.g., STU001)."));
-    }
+  if (intent === "FinanceIntent" || queryText.includes("fee")) {
+    const studentId = params.studentId?.[0] || queryText.match(/stu\d+/i)?.[0];
+    if (!studentId) return res.json(sendResponse("Please provide your Student ID (e.g., STU001)."));
 
     const student = students[studentId];
-    if (!student) {
-      return res.json(sendResponse("⚠️ I couldn’t find details for that student ID."));
-    }
+    if (!student) return res.json(sendResponse("⚠️ I couldn’t find details for that student ID."));
 
     return res.json(
       sendResponse(
@@ -103,16 +47,12 @@ app.post("/webhook", async (req, res) => {
   }
 
   // ------------------ Parent Status ------------------
-  if (intent === "ParentStatusIntent") {
-    const parentId = params.parentId?.[0];
-    if (!parentId) {
-      return res.json(sendResponse("Please provide your Parent ID (e.g., PARENT001)."));
-    }
+  if (intent === "ParentStatusIntent" || queryText.includes("parent")) {
+    const parentId = params.parentId?.[0] || queryText.match(/parent\d+/i)?.[0];
+    if (!parentId) return res.json(sendResponse("Please provide your Parent ID (e.g., PARENT001)."));
 
     const parent = parents[parentId];
-    if (!parent) {
-      return res.json(sendResponse("⚠️ I couldn’t find details for that parent ID."));
-    }
+    if (!parent) return res.json(sendResponse("⚠️ I couldn’t find details for that parent ID."));
 
     return res.json(
       sendResponse(
@@ -122,16 +62,12 @@ app.post("/webhook", async (req, res) => {
   }
 
   // ------------------ Mentor Status ------------------
-  if (intent === "MentorStatusIntent") {
-    const mentorId = params.mentorId?.[0];
-    if (!mentorId) {
-      return res.json(sendResponse("Please provide your Mentor ID (e.g., MENTOR001)."));
-    }
+  if (intent === "MentorStatusIntent" || queryText.includes("mentor id")) {
+    const mentorId = params.mentorId?.[0] || queryText.match(/mentor\d+/i)?.[0];
+    if (!mentorId) return res.json(sendResponse("Please provide your Mentor ID (e.g., MENTOR001)."));
 
     const mentor = mentors[mentorId];
-    if (!mentor) {
-      return res.json(sendResponse("⚠️ I couldn’t find details for that mentor ID."));
-    }
+    if (!mentor) return res.json(sendResponse("⚠️ I couldn’t find details for that mentor ID."));
 
     return res.json(
       sendResponse(
@@ -140,8 +76,17 @@ app.post("/webhook", async (req, res) => {
     );
   }
 
+  // ------------------ Mentorship ------------------
+  if (intent === "MentorshipIntent" || queryText.includes("mentor")) {
+    return res.json(
+      sendResponse(
+        `👨‍🏫 *Mentorship Available*\nWe have mentors in the following fields:\n- 💻 Computer Science\n- ⚙️ Mechanical Engineering\n- 📊 Commerce\n- 🤖 Artificial Intelligence / Data Science\n\n👉 Options:\n1️⃣ Connect to a Mentor\n2️⃣ View Mentor Profiles`
+      )
+    );
+  }
+
   // ------------------ Counseling ------------------
-  if (intent === "CounselingIntent") {
+  if (intent === "CounselingIntent" || queryText.includes("counsel") || queryText.includes("stress")) {
     return res.json(
       sendResponse(
         `🧠 *Counseling Support*\nI understand you’re seeking guidance.\n✔ A counselor will be notified to contact you.\n✔ Meanwhile, here are self-help resources:\n- Stress management tips\n- Study-life balance guide\n\n👉 Options:\n1️⃣ Connect to Counselor\n2️⃣ Show Self-Help Resources`
@@ -150,7 +95,7 @@ app.post("/webhook", async (req, res) => {
   }
 
   // ------------------ Distress ------------------
-  if (intent === "DistressIntent") {
+  if (intent === "DistressIntent" || queryText.includes("suicidal") || queryText.includes("unsafe") || queryText.includes("depression")) {
     return res.json(
       sendResponse(
         `🚨 *Distress Alert*\nI sense you’re in distress. You are not alone.\n✔ A counselor has been notified to contact you immediately.\n✔ If it’s urgent, please call the helpline: 📞 1800-599-0019\n\n👉 Options:\n1️⃣ Connect to Counselor Now\n2️⃣ Get Relaxation Resources`
@@ -159,7 +104,7 @@ app.post("/webhook", async (req, res) => {
   }
 
   // ------------------ Marketplace ------------------
-  if (intent === "MarketplaceIntent") {
+  if (intent === "MarketplaceIntent" || queryText.includes("laptop") || queryText.includes("books") || queryText.includes("marketplace") || queryText.includes("sell")) {
     return res.json(
       sendResponse(
         `🛒 *Marketplace Listings*\nHere are some items available right now:\n- 📚 Used Textbooks (CS, Mechanical, Commerce)\n- 🧮 Calculators\n- 🛏 Hostel Essentials\n- 💻 Laptops (second-hand)\n\n👉 Options:\n1️⃣ See Latest Listings\n2️⃣ Post an Item for Sale`
@@ -167,29 +112,11 @@ app.post("/webhook", async (req, res) => {
     );
   }
 
-  // ------------------ Mentorship ------------------
-  if (intent === "MentorshipIntent") {
-    return res.json(
-      sendResponse(
-        `👨‍🏫 *Mentorship Available*\nWe have mentors in the following fields:\n- 💻 Computer Science\n- ⚙️ Mechanical Engineering\n- 📊 Commerce\n- 🤖 Artificial Intelligence / Data Science\n\n👉 Options:\n1️⃣ Connect to a Mentor\n2️⃣ View Mentor Profiles`
-      )
-    );
-  }
-
-  // ------------------ Default (Google Sheet Fallback) ------------------
-  const userQuery = req.body.queryResult.queryText;
-  const sheetAnswer = await getSheetResponse(userQuery);
-
-  if (sheetAnswer) {
-    return res.json(sendResponse(sheetAnswer));
-  }
-
+  // ------------------ Default ------------------
   return res.json(sendResponse("I can guide you in Finance, Mentorship, Counseling, or Marketplace."));
 });
 
 // ------------------ Start Server ------------------
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
 
