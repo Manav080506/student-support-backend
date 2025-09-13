@@ -1,54 +1,81 @@
 // server.js
 import express from "express";
 import bodyParser from "body-parser";
-import fetch from "node-fetch"; // install this if not present: npm install node-fetch
+import { GoogleSpreadsheet } from "google-spreadsheet";
 
 const app = express();
 app.use(bodyParser.json());
 
-// ------------------ Dummy Database ------------------
-const students = {
-  STU001: { name: "Manav Runthala", feesPending: 5000, scholarships: ["Computer Science"] },
-  STU002: { name: "Daksh Beniwal", feesPending: 3000, scholarships: ["Mechanical Engineering"] },
-  STU003: { name: "Disha Binani", feesPending: 0, scholarships: ["Commerce"] },
-};
-
-const parents = {
-  PARENT001: { child: "Manav Runthala", attendance: "85%", marks: "80%", feesPending: 5000 },
-};
-
-const mentors = {
-  MENTOR001: { mentees: ["STU001", "STU002"] },
-};
-
 // ------------------ Google Sheets Setup ------------------
-const SHEET_ID = "1QoLAe1-n6-O62LQSYqgNB--jfS10IMubsObvU_e49rI";
-const API_KEY = "AIzaSyBUQSfcsfgBobgPVK4Kd6hc6fajcwTI8CI";
+const SHEET_ID = "1QoLAe1-n6-O62LQSYqgNB--jfS10IMubsObvU_e49rI"; // your sheet ID
+const API_KEY = "AIzaSyBUQSfcsfgBobgPVK4Kd6hc6fajcwTI8CI";       // your API key
+const doc = new GoogleSpreadsheet(SHEET_ID);
 
-async function searchSheet(query) {
+async function getSheetResponse(userQuery) {
   try {
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Sheet1!A:B?key=${API_KEY}`;
-    const response = await fetch(url);
-    const data = await response.json();
+    await doc.useApiKey(API_KEY);
+    await doc.loadInfo();
 
-    if (!data.values) return null;
+    const sheet = doc.sheetsByIndex[0]; // first sheet
+    const rows = await sheet.getRows();
 
-    // Example: first column = question, second column = answer
-    for (let row of data.values) {
-      if (row[0] && query.toLowerCase().includes(row[0].toLowerCase())) {
-        return row[1] || null;
+    const query = userQuery.toLowerCase();
+
+    for (let row of rows) {
+      const keyword = row.Keyword?.toLowerCase();
+      const answer = row.Answer;
+
+      if (keyword && query.includes(keyword)) {
+        return answer;
       }
     }
     return null;
   } catch (err) {
-    console.error("Error fetching from Google Sheets:", err);
+    console.error("❌ Error reading sheet:", err);
     return null;
   }
 }
 
+// ------------------ Dummy Database ------------------
+const students = {
+  STU001: {
+    name: "Manav Runthala",
+    feesPending: 5000,
+    scholarships: ["Computer Science"],
+  },
+  STU002: {
+    name: "Daksh Beniwal",
+    feesPending: 3000,
+    scholarships: ["Mechanical Engineering"],
+  },
+  STU003: {
+    name: "Disha Binani",
+    feesPending: 0,
+    scholarships: ["Commerce"],
+  },
+};
+
+const parents = {
+  PARENT001: {
+    child: "Manav Runthala",
+    attendance: "85%",
+    marks: "80%",
+    feesPending: 5000,
+  },
+};
+
+const mentors = {
+  MENTOR001: {
+    mentees: ["STU001", "STU002"],
+  },
+};
+
 // ------------------ Helper ------------------
 function sendResponse(text) {
-  return { fulfillmentText: text, fulfillmentMessages: [{ text: { text: [text] } }] };
+  return {
+    fulfillmentText: text,
+    fulfillmentMessages: [{ text: { text: [text] } }],
+  };
 }
 
 // ------------------ Webhook ------------------
@@ -59,10 +86,14 @@ app.post("/webhook", async (req, res) => {
   // ------------------ Finance ------------------
   if (intent === "FinanceIntent") {
     const studentId = params.studentId?.[0];
-    if (!studentId) return res.json(sendResponse("Please provide your Student ID (e.g., STU001)."));
+    if (!studentId) {
+      return res.json(sendResponse("Please provide your Student ID (e.g., STU001)."));
+    }
 
     const student = students[studentId];
-    if (!student) return res.json(sendResponse("⚠️ I couldn’t find details for that student ID."));
+    if (!student) {
+      return res.json(sendResponse("⚠️ I couldn’t find details for that student ID."));
+    }
 
     return res.json(
       sendResponse(
@@ -74,10 +105,14 @@ app.post("/webhook", async (req, res) => {
   // ------------------ Parent Status ------------------
   if (intent === "ParentStatusIntent") {
     const parentId = params.parentId?.[0];
-    if (!parentId) return res.json(sendResponse("Please provide your Parent ID (e.g., PARENT001)."));
+    if (!parentId) {
+      return res.json(sendResponse("Please provide your Parent ID (e.g., PARENT001)."));
+    }
 
     const parent = parents[parentId];
-    if (!parent) return res.json(sendResponse("⚠️ I couldn’t find details for that parent ID."));
+    if (!parent) {
+      return res.json(sendResponse("⚠️ I couldn’t find details for that parent ID."));
+    }
 
     return res.json(
       sendResponse(
@@ -89,10 +124,14 @@ app.post("/webhook", async (req, res) => {
   // ------------------ Mentor Status ------------------
   if (intent === "MentorStatusIntent") {
     const mentorId = params.mentorId?.[0];
-    if (!mentorId) return res.json(sendResponse("Please provide your Mentor ID (e.g., MENTOR001)."));
+    if (!mentorId) {
+      return res.json(sendResponse("Please provide your Mentor ID (e.g., MENTOR001)."));
+    }
 
     const mentor = mentors[mentorId];
-    if (!mentor) return res.json(sendResponse("⚠️ I couldn’t find details for that mentor ID."));
+    if (!mentor) {
+      return res.json(sendResponse("⚠️ I couldn’t find details for that mentor ID."));
+    }
 
     return res.json(
       sendResponse(
@@ -137,15 +176,15 @@ app.post("/webhook", async (req, res) => {
     );
   }
 
-  // ------------------ Default Fallback with Google Sheets ------------------
+  // ------------------ Default (Google Sheet Fallback) ------------------
   const userQuery = req.body.queryResult.queryText;
-  const sheetAnswer = await searchSheet(userQuery);
+  const sheetAnswer = await getSheetResponse(userQuery);
 
   if (sheetAnswer) {
     return res.json(sendResponse(sheetAnswer));
-  } else {
-    return res.json(sendResponse("I can guide you in Finance, Mentorship, Counseling, or Marketplace."));
   }
+
+  return res.json(sendResponse("I can guide you in Finance, Mentorship, Counseling, or Marketplace."));
 });
 
 // ------------------ Start Server ------------------
