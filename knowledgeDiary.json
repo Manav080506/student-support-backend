@@ -1,0 +1,28 @@
+x{
+  "faq": [
+    {
+      "keywords": ["ai", "artificial intelligence"],
+      "answer": "🤖 AI stands for Artificial Intelligence. It's the simulation of human intelligence in machines."
+    },
+    {
+      "keywords": ["library timing", "library hours", "library open"],
+      "answer": "📚 The library is open from 9 AM to 8 PM on weekdays, and 10 AM to 5 PM on weekends."
+    },
+    {
+      "keywords": ["hostel rules", "hostel timing"],
+      "answer": "🏠 Hostel entry closes at 10 PM on weekdays. Visitors are allowed only till 7 PM."
+    },
+    {
+      "keywords": ["placement", "jobs", "career"],
+      "answer": "💼 Our placement cell organizes campus drives every semester. Visit the Placement Office portal for upcoming companies."
+    },
+    {
+      "keywords": ["canteen", "food court", "mess timing"],
+      "answer": "🍴 The canteen is open from 8 AM to 10 PM. Mess timings: Breakfast 8–10 AM, Lunch 12–2 PM, Dinner 7–9 PM."
+    },
+    {
+      "keywords": ["scholarship", "financial aid"],
+      "answer": "🎓 Scholarships are available for meritorious and need-based students. Check the Finance Portal under 'Scholarships'."
+    }
+  ]
+}
