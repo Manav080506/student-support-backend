@@ -1,6 +1,8 @@
 // server.js
 import express from "express";
 import bodyParser from "body-parser";
+import { google } from "googleapis";
+import fs from "fs";
 
 const app = express();
 app.use(bodyParser.json());
@@ -39,6 +41,50 @@ const mentors = {
   },
 };
 
+// ------------------ Google Sheets Setup (Diary) ------------------
+const credentials = JSON.parse(fs.readFileSync("credentials.json", "utf8"));
+const SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"];
+
+const auth = new google.auth.GoogleAuth({
+  credentials,
+  scopes: SCOPES,
+});
+
+// Replace with your Google Sheet ID
+const SHEET_ID = "YOUR_SHEET_ID_HERE";
+const RANGE = "Sheet1!A:B"; // A=keywords, B=answer
+
+async function fetchDiary() {
+  const client = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: client });
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: RANGE,
+  });
+
+  const rows = res.data.values;
+  if (!rows || rows.length === 0) return [];
+
+  return rows.map((row) => {
+    const keywords = row[0] ? row[0].split(",").map((k) => k.trim()) : [];
+    const answer = row[1] || "";
+    return { keywords, answer };
+  });
+}
+
+function lookupDiary(queryText, faqList) {
+  queryText = queryText.toLowerCase();
+  for (const faq of faqList) {
+    for (const keyword of faq.keywords) {
+      if (queryText.includes(keyword.toLowerCase())) {
+        return faq.answer;
+      }
+    }
+  }
+  return null;
+}
+
 // ------------------ Helper ------------------
 function sendResponse(text) {
   return {
@@ -48,9 +94,10 @@ function sendResponse(text) {
 }
 
 // ------------------ Webhook ------------------
-app.post("/webhook", (req, res) => {
+app.post("/webhook", async (req, res) => {
   const intent = req.body.queryResult.intent.displayName;
   const params = req.body.queryResult.parameters;
+  const queryText = req.body.queryResult.queryText;
 
   // ------------------ Finance ------------------
   if (intent === "FinanceIntent") {
@@ -63,7 +110,9 @@ app.post("/webhook", (req, res) => {
 
     const student = students[studentId];
     if (!student) {
-      return res.json(sendResponse("⚠️ I couldn’t find details for that student ID."));
+      return res.json(
+        sendResponse("⚠️ I couldn’t find details for that student ID.")
+      );
     }
 
     return res.json(
@@ -86,7 +135,9 @@ app.post("/webhook", (req, res) => {
 
     const parent = parents[parentId];
     if (!parent) {
-      return res.json(sendResponse("⚠️ I couldn’t find details for that parent ID."));
+      return res.json(
+        sendResponse("⚠️ I couldn’t find details for that parent ID.")
+      );
     }
 
     return res.json(
@@ -107,7 +158,9 @@ app.post("/webhook", (req, res) => {
 
     const mentor = mentors[mentorId];
     if (!mentor) {
-      return res.json(sendResponse("⚠️ I couldn’t find details for that mentor ID."));
+      return res.json(
+        sendResponse("⚠️ I couldn’t find details for that mentor ID.")
+      );
     }
 
     return res.json(
@@ -155,10 +208,28 @@ app.post("/webhook", (req, res) => {
     );
   }
 
-  // ------------------ Default ------------------
-  return res.json(
-    sendResponse("I can guide you in Finance, Mentorship, Counseling, or Marketplace.")
-  );
+  // ------------------ Fallback (Diary lookup) ------------------
+  try {
+    const faqList = await fetchDiary();
+    const diaryAnswer = lookupDiary(queryText, faqList);
+
+    if (diaryAnswer) {
+      return res.json(sendResponse(diaryAnswer));
+    } else {
+      return res.json(
+        sendResponse(
+          "🤔 I don’t have an exact answer for that. But I can guide you in Finance, Mentorship, Counseling, or Marketplace."
+        )
+      );
+    }
+  } catch (err) {
+    console.error("Diary fetch error:", err);
+    return res.json(
+      sendResponse(
+        "⚠️ I couldn’t access the knowledge base right now. Please try again."
+      )
+    );
+  }
 });
 
 // ------------------ Start Server ------------------
