@@ -1,125 +1,72 @@
 // server.js
 import express from "express";
 import bodyParser from "body-parser";
-import { google } from "googleapis";
-import fs from "fs";
+import fetch from "node-fetch"; // install this if not present: npm install node-fetch
 
 const app = express();
 app.use(bodyParser.json());
 
 // ------------------ Dummy Database ------------------
 const students = {
-  STU001: {
-    name: "Manav Runthala",
-    feesPending: 5000,
-    scholarships: ["Computer Science"],
-  },
-  STU002: {
-    name: "Daksh Beniwal",
-    feesPending: 3000,
-    scholarships: ["Mechanical Engineering"],
-  },
-  STU003: {
-    name: "Disha Binani",
-    feesPending: 0,
-    scholarships: ["Commerce"],
-  },
+  STU001: { name: "Manav Runthala", feesPending: 5000, scholarships: ["Computer Science"] },
+  STU002: { name: "Daksh Beniwal", feesPending: 3000, scholarships: ["Mechanical Engineering"] },
+  STU003: { name: "Disha Binani", feesPending: 0, scholarships: ["Commerce"] },
 };
 
 const parents = {
-  PARENT001: {
-    child: "Manav Runthala",
-    attendance: "85%",
-    marks: "80%",
-    feesPending: 5000,
-  },
+  PARENT001: { child: "Manav Runthala", attendance: "85%", marks: "80%", feesPending: 5000 },
 };
 
 const mentors = {
-  MENTOR001: {
-    mentees: ["STU001", "STU002"],
-  },
+  MENTOR001: { mentees: ["STU001", "STU002"] },
 };
 
-// ------------------ Google Sheets Setup (Diary) ------------------
-const credentials = JSON.parse(fs.readFileSync("credentials.json", "utf8"));
-const SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"];
+// ------------------ Google Sheets Setup ------------------
+const SHEET_ID = "1QoLAe1-n6-O62LQSYqgNB--jfS10IMubsObvU_e49rI";
+const API_KEY = "AIzaSyBUQSfcsfgBobgPVK4Kd6hc6fajcwTI8CI";
 
-const auth = new google.auth.GoogleAuth({
-  credentials,
-  scopes: SCOPES,
-});
+async function searchSheet(query) {
+  try {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Sheet1!A:B?key=${API_KEY}`;
+    const response = await fetch(url);
+    const data = await response.json();
 
-// Replace with your Google Sheet ID
-const SHEET_ID = "YOUR_SHEET_ID_HERE";
-const RANGE = "Sheet1!A:B"; // A=keywords, B=answer
+    if (!data.values) return null;
 
-async function fetchDiary() {
-  const client = await auth.getClient();
-  const sheets = google.sheets({ version: "v4", auth: client });
-
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SHEET_ID,
-    range: RANGE,
-  });
-
-  const rows = res.data.values;
-  if (!rows || rows.length === 0) return [];
-
-  return rows.map((row) => {
-    const keywords = row[0] ? row[0].split(",").map((k) => k.trim()) : [];
-    const answer = row[1] || "";
-    return { keywords, answer };
-  });
-}
-
-function lookupDiary(queryText, faqList) {
-  queryText = queryText.toLowerCase();
-  for (const faq of faqList) {
-    for (const keyword of faq.keywords) {
-      if (queryText.includes(keyword.toLowerCase())) {
-        return faq.answer;
+    // Example: first column = question, second column = answer
+    for (let row of data.values) {
+      if (row[0] && query.toLowerCase().includes(row[0].toLowerCase())) {
+        return row[1] || null;
       }
     }
+    return null;
+  } catch (err) {
+    console.error("Error fetching from Google Sheets:", err);
+    return null;
   }
-  return null;
 }
 
 // ------------------ Helper ------------------
 function sendResponse(text) {
-  return {
-    fulfillmentText: text,
-    fulfillmentMessages: [{ text: { text: [text] } }],
-  };
+  return { fulfillmentText: text, fulfillmentMessages: [{ text: { text: [text] } }] };
 }
 
 // ------------------ Webhook ------------------
 app.post("/webhook", async (req, res) => {
   const intent = req.body.queryResult.intent.displayName;
   const params = req.body.queryResult.parameters;
-  const queryText = req.body.queryResult.queryText;
 
   // ------------------ Finance ------------------
   if (intent === "FinanceIntent") {
     const studentId = params.studentId?.[0];
-    if (!studentId) {
-      return res.json(
-        sendResponse("Please provide your Student ID (e.g., STU001).")
-      );
-    }
+    if (!studentId) return res.json(sendResponse("Please provide your Student ID (e.g., STU001)."));
 
     const student = students[studentId];
-    if (!student) {
-      return res.json(
-        sendResponse("⚠️ I couldn’t find details for that student ID.")
-      );
-    }
+    if (!student) return res.json(sendResponse("⚠️ I couldn’t find details for that student ID."));
 
     return res.json(
       sendResponse(
-        `💰 *Finance Summary*\n- Student: ${student.name}\n- Pending Fees: ₹${student.feesPending}\n- Scholarships: ${student.scholarships.join(
-          ", "
-        )}\n\n👉 Options:\n1️⃣ Show Eligible Scholarships\n2️⃣ Show Fee Deadlines`
+        `💰 *Finance Summary*\n- Student: ${student.name}\n- Pending Fees: ₹${student.feesPending}\n- Scholarships: ${student.scholarships.join(", ")}\n\n👉 Options:\n1️⃣ Show Eligible Scholarships\n2️⃣ Show Fee Deadlines`
       )
     );
   }
@@ -127,18 +74,10 @@ app.post("/webhook", async (req, res) => {
   // ------------------ Parent Status ------------------
   if (intent === "ParentStatusIntent") {
     const parentId = params.parentId?.[0];
-    if (!parentId) {
-      return res.json(
-        sendResponse("Please provide your Parent ID (e.g., PARENT001).")
-      );
-    }
+    if (!parentId) return res.json(sendResponse("Please provide your Parent ID (e.g., PARENT001)."));
 
     const parent = parents[parentId];
-    if (!parent) {
-      return res.json(
-        sendResponse("⚠️ I couldn’t find details for that parent ID.")
-      );
-    }
+    if (!parent) return res.json(sendResponse("⚠️ I couldn’t find details for that parent ID."));
 
     return res.json(
       sendResponse(
@@ -150,24 +89,14 @@ app.post("/webhook", async (req, res) => {
   // ------------------ Mentor Status ------------------
   if (intent === "MentorStatusIntent") {
     const mentorId = params.mentorId?.[0];
-    if (!mentorId) {
-      return res.json(
-        sendResponse("Please provide your Mentor ID (e.g., MENTOR001).")
-      );
-    }
+    if (!mentorId) return res.json(sendResponse("Please provide your Mentor ID (e.g., MENTOR001)."));
 
     const mentor = mentors[mentorId];
-    if (!mentor) {
-      return res.json(
-        sendResponse("⚠️ I couldn’t find details for that mentor ID.")
-      );
-    }
+    if (!mentor) return res.json(sendResponse("⚠️ I couldn’t find details for that mentor ID."));
 
     return res.json(
       sendResponse(
-        `👨‍🏫 *Mentor Dashboard*\nMentor ID: ${mentorId}\n\n📋 Assigned Mentees:\n${mentor.mentees.join(
-          ", "
-        )}\n\n👉 Options:\n1️⃣ Show Performance Summary\n2️⃣ Send Message to Mentees`
+        `👨‍🏫 *Mentor Dashboard*\nMentor ID: ${mentorId}\n\n📋 Assigned Mentees:\n${mentor.mentees.join(", ")}\n\n👉 Options:\n1️⃣ Show Performance Summary\n2️⃣ Send Message to Mentees`
       )
     );
   }
@@ -208,27 +137,14 @@ app.post("/webhook", async (req, res) => {
     );
   }
 
-  // ------------------ Fallback (Diary lookup) ------------------
-  try {
-    const faqList = await fetchDiary();
-    const diaryAnswer = lookupDiary(queryText, faqList);
+  // ------------------ Default Fallback with Google Sheets ------------------
+  const userQuery = req.body.queryResult.queryText;
+  const sheetAnswer = await searchSheet(userQuery);
 
-    if (diaryAnswer) {
-      return res.json(sendResponse(diaryAnswer));
-    } else {
-      return res.json(
-        sendResponse(
-          "🤔 I don’t have an exact answer for that. But I can guide you in Finance, Mentorship, Counseling, or Marketplace."
-        )
-      );
-    }
-  } catch (err) {
-    console.error("Diary fetch error:", err);
-    return res.json(
-      sendResponse(
-        "⚠️ I couldn’t access the knowledge base right now. Please try again."
-      )
-    );
+  if (sheetAnswer) {
+    return res.json(sendResponse(sheetAnswer));
+  } else {
+    return res.json(sendResponse("I can guide you in Finance, Mentorship, Counseling, or Marketplace."));
   }
 });
 
