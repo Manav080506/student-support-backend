@@ -3,13 +3,12 @@ import mongoose from "mongoose";
 
 const studentSchema = new mongoose.Schema({
   studentId: { type: String, required: true, unique: true },
-  name: { type: String, required: true },
-  feesPending: { type: Number, default: 0 },
-  marks: { type: Number, default: 0 },
-  attendance: { type: Number, default: 0 },
-  scholarships: [{ course: String }],
-  interests: [String],
+  name: String,
+  feesPending: Number,
+  scholarships: [String],
+  marks: Number,
+  attendance: Number
 });
 
-const Student = mongoose.model("Student", studentSchema);
+const Student = mongoose.models.Student || mongoose.model("Student", studentSchema);
 export default Student;
