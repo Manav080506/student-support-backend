@@ -19,24 +19,6 @@ const app = express();
 app.use(bodyParser.json());
 app.use(cors());
 
-const sentiment = new Sentiment();
-
-// ------------------ Emotion Helper ------------------
-function detectEmotion(text) {
-  const result = sentiment.analyze(text);
-  const score = result.score;
-
-  // 🚨 Severe distress keywords
-  const distressKeywords = ["suicide", "kill myself", "die", "end my life", "depressed"];
-  if (distressKeywords.some((w) => text.toLowerCase().includes(w))) {
-    return "severe";
-  }
-
-  if (score < -2) return "negative";
-  if (score > 2) return "positive";
-  return "neutral";
-}
-
 // ------------------ MongoDB Connection ------------------
 mongoose
   .connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
@@ -67,24 +49,8 @@ function sendResponse(text) {
 app.post("/webhook", async (req, res) => {
   const intent = req.body.queryResult.intent.displayName;
   const params = req.body.queryResult.parameters;
-  const userQuery = req.body.queryResult.queryText;
 
   try {
-    // ------------------ Emotion Detection ------------------
-    const emotion = detectEmotion(userQuery);
-
-    if (emotion === "severe") {
-      return res.json(sendResponse(
-        `🚨 *Distress Alert* \nI sense you're in severe distress. You are not alone. \n✔ A counselor will be notified. \n📞 Please call: 1800-599-0019`
-      ));
-    }
-
-    if (emotion === "negative" && intent === "Default Fallback Intent") {
-      return res.json(sendResponse(
-        `💙 I hear you're not feeling well. \nWould you like me to connect you with a counselor or show self-care resources?`
-      ));
-    }
-
     // ------------------ Finance ------------------
     if (intent === "FinanceIntent") {
       const studentId = params.studentId?.[0];
@@ -194,161 +160,56 @@ app.post("/webhook", async (req, res) => {
       return res.json(sendResponse(`📌 *Your Latest Reminders:*\n${reminderText}`));
     }
 
-    // ------------------ Fallback with Multi-Layer ------------------
+    // ------------------ Fallback with Sentiment + Multi-Layer ------------------
     if (intent === "Default Fallback Intent") {
+      const userQuery = req.body.queryResult.queryText;
+
+      // 🧠 Sentiment Analysis
+      const sentiment = new Sentiment();
+      const analysis = sentiment.analyze(userQuery);
+
+      if (analysis.score < -2) {
+        return res.json(
+          sendResponse(`😔 I sense you're feeling low.\n💡 You're not alone. Would you like me to connect you with a counselor?`)
+        );
+      }
+
+      if (analysis.score > 2) {
+        return res.json(
+          sendResponse(`😊 I’m glad to hear that you’re feeling positive today! Keep it up!`)
+        );
+      }
+
       // 1️⃣ Check MongoDB FAQs
       const faq = await Faq.findOne({ question: new RegExp(userQuery, "i") });
       if (faq) return res.json(sendResponse(faq.answer));
 
       // 2️⃣ Check Google Sheets
       const sheetData = await getSheetData();
-      const sheetFaq = sheetData.find((row) => row.Question && userQuery.toLowerCase().includes(row.Question.toLowerCase()));
+      const sheetFaq = sheetData.find(
+        (row) => row.Question && userQuery.toLowerCase().includes(row.Question.toLowerCase())
+      );
       if (sheetFaq) return res.json(sendResponse(sheetFaq.Answer));
 
       // 3️⃣ Hardcoded fallback
       const hardcodedFaqs = {
-        "what is sih": "💡 *SIH (Smart India Hackathon)* is a nationwide initiative by MHRD to provide students a platform to solve pressing problems.",
-        "who are you": "🤖 I am your Student Support Assistant, here to guide you with Finance, Mentorship, Counseling, and Marketplace queries.",
+        "what is sih":
+          "💡 *SIH (Smart India Hackathon)* is a nationwide initiative by MHRD to provide students a platform to solve pressing problems.",
+        "who are you":
+          "🤖 I am your Student Support Assistant, here to guide you with Finance, Mentorship, Counseling, and Marketplace queries.",
       };
       const lowerQ = userQuery.toLowerCase();
       if (hardcodedFaqs[lowerQ]) return res.json(sendResponse(hardcodedFaqs[lowerQ]));
 
       // 4️⃣ Final fallback
-      return res.json(sendResponse("🙏 Sorry, I couldn’t find an exact answer. But I can guide you in Finance, Mentorship, Counseling, or Marketplace."));
+      return res.json(
+        sendResponse("🙏 Sorry, I couldn’t find an exact answer. But I can guide you in Finance, Mentorship, Counseling, or Marketplace.")
+      );
     }
   } catch (err) {
     console.error("❌ Webhook error:", err.message);
     res.json(sendResponse("⚠️ Something went wrong while processing your request."));
   }
-});
-
-// ------------------ Seeder Routes ------------------
-app.get("/seed-faqs", async (req, res) => {
-  try {
-    const faqs = [
-      { category: "General", question: "What is SIH", answer: "💡 SIH (Smart India Hackathon) is a nationwide initiative by MHRD to provide students a platform to solve pressing problems." },
-      { category: "General", question: "Who are you", answer: "🤖 I am your Student Support Assistant, here to guide you with Finance, Mentorship, Counseling, and Marketplace queries." },
-      { category: "Finance", question: "What scholarships are available", answer: "🎓 Scholarships are available for Computer Science, Mechanical, and Commerce students." },
-    ];
-    await Faq.deleteMany({});
-    await Faq.insertMany(faqs);
-    res.json({ message: "✅ FAQs seeded successfully!", faqs });
-  } catch (err) {
-    res.status(500).json({ error: "Seeder failed" });
-  }
-});
-
-app.get("/seed-badge-meta", async (req, res) => {
-  try {
-    const metas = [
-      { badgeName: "Finance Explorer", description: "Checked your finance summary", icon: "💰" },
-      { badgeName: "Engaged Parent", description: "Viewed child’s dashboard", icon: "👨‍👩‍👦" },
-      { badgeName: "Active Mentor", description: "Reviewed mentees", icon: "👨‍🏫" },
-      { badgeName: "Marketplace Explorer", description: "Browsed the marketplace", icon: "🛒" },
-      { badgeName: "Mentorship Seeker", description: "Requested a mentor", icon: "🎓" },
-      { badgeName: "Wellbeing Seeker", description: "Asked for counseling", icon: "🧠" },
-      { badgeName: "Consistency Badge", description: "Stayed active regularly", icon: "🎖️" },
-    ];
-    await BadgeMeta.deleteMany({});
-    await BadgeMeta.insertMany(metas);
-    res.json({ message: "✅ Badge metadata seeded successfully!", metas });
-  } catch (err) {
-    res.status(500).json({ error: "Seeder failed" });
-  }
-});
-
-// ------------------ Badge APIs ------------------
-app.post("/award-badge", async (req, res) => {
-  try {
-    const { studentId, badgeName, reason } = req.body;
-    const badge = await Badge.create({ studentId, badgeName, reason });
-    res.json({ message: "✅ Badge awarded", badge });
-  } catch (err) {
-    res.status(500).json({ error: "Award badge failed" });
-  }
-});
-
-app.get("/badges/:id", async (req, res) => {
-  try {
-    const id = req.params.id;
-    const badges = await Badge.find({ studentId: id }).sort({ awardedAt: -1 }).lean();
-    const metas = await BadgeMeta.find({}).lean();
-    const metaMap = {};
-    metas.forEach((m) => (metaMap[m.badgeName] = m));
-
-    const enriched = badges.map((b) => ({
-      ...b,
-      description: metaMap[b.badgeName]?.description || "",
-      icon: metaMap[b.badgeName]?.icon || "🏅",
-    }));
-
-    res.json({ badges: enriched });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to fetch badges" });
-  }
-});
-
-// ------------------ Reminder API ------------------
-app.get("/reminders/:id", async (req, res) => {
-  try {
-    const id = req.params.id;
-    const reminders = await Reminder.find({ targetId: { $in: [id, "GENERIC"] } })
-      .sort({ createdAt: -1 })
-      .limit(10)
-      .lean();
-    res.json({ reminders });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to fetch reminders" });
-  }
-});
-
-// ------------------ Cron Jobs ------------------
-// Daily finance reminders at 9 AM
-cron.schedule("0 9 * * *", async () => {
-  console.log("🔔 Cron: Checking finance reminders...");
-  for (const [id, student] of Object.entries(students)) {
-    if (student.feesPending > 0) {
-      const message = `⚠️ Reminder: ${student.name} has pending fees of ₹${student.feesPending}`;
-      await Reminder.create({ type: "finance", message, targetId: id });
-      console.log(message);
-    }
-  }
-});
-
-// Weekly mentorship nudges every Monday at 10 AM
-cron.schedule("0 10 * * 1", async () => {
-  console.log("📅 Cron: Weekly mentorship nudges...");
-  for (const [id, mentor] of Object.entries(mentors)) {
-    const message = `👨‍🏫 Mentor ${id} has ${mentor.mentees.length} mentees. Check progress!`;
-    await Reminder.create({ type: "mentorship", message, targetId: id });
-    console.log(message);
-  }
-});
-
-// Daily consistency badge check at midnight
-cron.schedule("0 0 * * *", async () => {
-  console.log("🎖️ Cron: Awarding consistency badges...");
-  const message = "🎖️ Consistency Badge awarded for daily engagement!";
-  await Reminder.create({ type: "badge", message, targetId: "GENERIC" });
-  await Badge.create({ studentId: "GENERIC", badgeName: "Consistency Badge", reason: "Daily engagement" });
-  console.log(message);
-});
-
-// Parent weekly report every Sunday at 8 PM
-cron.schedule("0 20 * * 0", async () => {
-  console.log("👨‍👩‍👦 Cron: Sending parent weekly report...");
-  for (const [id, parent] of Object.entries(parents)) {
-    const message = `📊 Weekly Report - Child: ${parent.child}, Attendance: ${parent.attendance}, Marks: ${parent.marks}`;
-    await Reminder.create({ type: "parent", message, targetId: id });
-    console.log(message);
-  }
-});
-
-// Health check every 30 minutes
-cron.schedule("*/30 * * * *", async () => {
-  const message = "✅ Server is alive & running...";
-  await Reminder.create({ type: "health", message, targetId: "SYSTEM" });
-  console.log(message);
 });
 
 // ------------------ Start Server ------------------
