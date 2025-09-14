@@ -6,6 +6,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import cron from "node-cron";
 import Sentiment from "sentiment";
+import stringSimilarity from "string-similarity";
 
 import Faq from "./models/Faq.js";
 import Badge from "./models/Badge.js";
@@ -68,6 +69,16 @@ async function logChat({ query, response, intent, matchedQuestion = null, matchS
   }
 }
 
+/**
+ * Fuzzy-match a user query against a list of Qs
+ * Returns { bestMatchText, bestScore } or null if list empty
+ */
+function fuzzyBestMatch(query, candidates) {
+  if (!candidates || candidates.length === 0) return null;
+  const scores = stringSimilarity.findBestMatch(query, candidates);
+  return { bestMatchText: scores.bestMatch.target, bestScore: scores.bestMatch.rating };
+}
+
 // ------------------ Webhook ------------------
 app.post("/webhook", async (req, res) => {
   const intent = req.body.queryResult?.intent?.displayName || "unknown";
@@ -77,7 +88,7 @@ app.post("/webhook", async (req, res) => {
     // ------------------ Finance ------------------
     if (intent === "FinanceIntent") {
       // accept both studentId and userID for robustness
-      const studentId = params.studentId?.[0] || params.userID || params.userID?.[0];
+      const studentId = params.studentId?.[0] || params.userID || (Array.isArray(params.userID) && params.userID[0]);
       if (!studentId) {
         const resp = "Please provide your Student ID (e.g., STU001).";
         await logChat({ query: req.body.queryResult.queryText || "", response: resp, intent, matchSource: "none", similarity: 0 });
@@ -225,7 +236,7 @@ app.post("/webhook", async (req, res) => {
       return res.json(sendResponse(resp));
     }
 
-    // ------------------ Fallback with Multi-Layer + Sentiment ------------------
+    // ------------------ Fallback with Multi-Layer + Sentiment + Fuzzy ------------------
     if (intent === "Default Fallback Intent") {
       const userQuery = (req.body.queryResult.queryText || "").trim();
 
@@ -254,51 +265,81 @@ app.post("/webhook", async (req, res) => {
         // continue to KB checks
       }
 
-      // 1️⃣ Check MongoDB FAQs (simple regex match)
+      // ---------- 1) MongoDB FAQs (exact / fuzzy fallback) ----------
       try {
+        // Try exact / regex first:
         const faq = await Faq.findOne({ question: new RegExp(userQuery, "i") });
         if (faq) {
           const resp = faq.answer;
           await logChat({ query: userQuery, response: resp, intent, matchedQuestion: faq.question, matchSource: "faq", similarity: 1 });
           return res.json(sendResponse(resp));
         }
+
+        // If no exact, do fuzzy against all FAQ questions
+        const allFaqs = await Faq.find({}, { question: 1, answer: 1 }).lean();
+        if (allFaqs && allFaqs.length > 0) {
+          const questions = allFaqs.map((f) => f.question);
+          const match = fuzzyBestMatch(userQuery, questions);
+          if (match && match.bestScore >= 0.6) {
+            const matchedFaq = allFaqs.find((f) => f.question === match.bestMatchText);
+            const resp = matchedFaq?.answer || "Sorry, couldn't fetch answer.";
+            await logChat({ query: userQuery, response: resp, intent, matchedQuestion: matchedFaq.question, matchSource: "faq", similarity: match.bestScore });
+            return res.json(sendResponse(resp));
+          }
+        }
       } catch (err) {
         console.warn("⚠️ FAQ lookup failed:", err.message);
       }
 
-      // 2️⃣ Check Google Sheets
+      // ---------- 2) Google Sheets (fuzzy) ----------
       try {
-        const sheetData = await getSheetData(); // returns array of rows as objects with headers
-        const sheetFaq = sheetData.find((row) => {
-          if (!row.Question) return false;
-          try {
-            return userQuery.toLowerCase().includes(row.Question.toLowerCase());
-          } catch {
-            return false;
+        const sheetData = await getSheetData(); // returns array of rows as objects with headers "Question", "Answer"
+        if (sheetData && sheetData.length > 0) {
+          const sheetQuestions = sheetData
+            .filter((r) => r.Question)
+            .map((r) => r.Question);
+
+          if (sheetQuestions.length > 0) {
+            const sheetMatch = fuzzyBestMatch(userQuery, sheetQuestions);
+            if (sheetMatch && sheetMatch.bestScore >= 0.6) {
+              const matchedRow = sheetData.find((r) => r.Question === sheetMatch.bestMatchText);
+              const resp = matchedRow?.Answer || matchedRow?.answer || "Sorry, couldn't fetch answer from sheet.";
+              await logChat({ query: userQuery, response: resp, intent, matchedQuestion: matchedRow.Question, matchSource: "sheet", similarity: sheetMatch.bestScore });
+              return res.json(sendResponse(resp));
+            }
           }
-        });
-        if (sheetFaq) {
-          const resp = sheetFaq.Answer || sheetFaq.answer || "Sorry, I couldn't fetch the sheet answer.";
-          await logChat({ query: userQuery, response: resp, intent, matchedQuestion: sheetFaq.Question, matchSource: "sheet", similarity: 1 });
-          return res.json(sendResponse(resp));
         }
       } catch (err) {
         console.warn("⚠️ Google Sheets lookup failed:", err.message);
       }
 
-      // 3️⃣ Hardcoded fallback map (case-insensitive keyed)
+      // ---------- 3) Hardcoded fallback map (case-insensitive keyed) ----------
       const hardcodedFaqs = {
         "what is sih": "💡 *SIH (Smart India Hackathon)* is a nationwide initiative by MHRD to provide students a platform to solve pressing problems.",
         "who are you": "🤖 I am your Student Support Assistant, here to guide you in Finance, Mentorship, Counseling, and Marketplace.",
       };
       const lowerQ = userQuery.toLowerCase();
+      // try direct hardcoded key
       if (hardcodedFaqs[lowerQ]) {
         const resp = hardcodedFaqs[lowerQ];
         await logChat({ query: userQuery, response: resp, intent, matchedQuestion: lowerQ, matchSource: "hardcoded", similarity: 1 });
         return res.json(sendResponse(resp));
       }
+      // fuzzy-match hardcoded keys as fallback
+      try {
+        const hcKeys = Object.keys(hardcodedFaqs);
+        const hcMatch = fuzzyBestMatch(userQuery, hcKeys);
+        if (hcMatch && hcMatch.bestScore >= 0.6) {
+          const matchedKey = hcMatch.bestMatchText;
+          const resp = hardcodedFaqs[matchedKey];
+          await logChat({ query: userQuery, response: resp, intent, matchedQuestion: matchedKey, matchSource: "hardcoded", similarity: hcMatch.bestScore });
+          return res.json(sendResponse(resp));
+        }
+      } catch (err) {
+        /* noop */
+      }
 
-      // 4️⃣ Final fallback (no match)
+      // ---------- 4) Final fallback (no match) ----------
       const finalResp = "🙏 Sorry, I couldn’t find an exact answer. But I can guide you in Finance, Mentorship, Counseling, or Marketplace.";
       await logChat({ query: userQuery, response: finalResp, intent, matchSource: "none", similarity: 0 });
       return res.json(sendResponse(finalResp));
@@ -398,6 +439,28 @@ app.get("/reminders/:id", async (req, res) => {
   } catch (err) {
     console.error("❌ Get reminders error:", err.message);
     res.status(500).json({ error: "Failed to fetch reminders" });
+  }
+});
+
+// ------------------ Chatlogs endpoint (for debugging + analytics) ------------------
+app.get("/chatlogs", async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit || "20", 10), 200);
+    const page = Math.max(parseInt(req.query.page || "1", 10), 1);
+    const skip = (page - 1) * limit;
+
+    // optional filters: source, intent
+    const filter = {};
+    if (req.query.source) filter.matchSource = req.query.source;
+    if (req.query.intent) filter.intent = req.query.intent;
+
+    const logs = await ChatLog.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean();
+    const total = await ChatLog.countDocuments(filter);
+
+    res.json({ logs, total, page, limit });
+  } catch (err) {
+    console.error("❌ Get chatlogs error:", err.message);
+    res.status(500).json({ error: "Failed to fetch chatlogs" });
   }
 });
 
