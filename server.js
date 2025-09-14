@@ -2,7 +2,7 @@
 import express from "express";
 import bodyParser from "body-parser";
 import mongoose from "mongoose";
-import { getFaqAnswer } from "./faq.js";
+import Faq from "./models/Faq.js";
 import { getSheetAnswer } from "./sheets.js";
 import { Student, Parent, Mentor } from "./db.js";
 
