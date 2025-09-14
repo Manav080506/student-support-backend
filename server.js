@@ -240,7 +240,7 @@ app.get("/badges/:id", async (req, res) => {
 
 // ------------------ Cron Jobs ------------------
 
-// Daily finance reminders at 9 AM
+// 1️⃣ Daily finance reminders at 9 AM
 cron.schedule("0 9 * * *", () => {
   console.log("🔔 Cron: Checking finance reminders...");
   Object.entries(students).forEach(([id, student]) => {
@@ -250,12 +250,31 @@ cron.schedule("0 9 * * *", () => {
   });
 });
 
-// Weekly mentorship nudges every Monday at 10 AM
+// 2️⃣ Weekly mentorship nudges every Monday at 10 AM
 cron.schedule("0 10 * * 1", () => {
   console.log("📅 Cron: Weekly mentorship nudges...");
   Object.entries(mentors).forEach(([id, mentor]) => {
     console.log(`👨‍🏫 Mentor ${id} has ${mentor.mentees.length} mentees`);
   });
+});
+
+// 3️⃣ Daily consistency badge check at midnight
+cron.schedule("0 0 * * *", async () => {
+  console.log("🎖️ Cron: Awarding consistency badges...");
+  await Badge.create({ studentId: "GENERIC", badgeName: "Consistency Badge", reason: "Daily engagement" });
+});
+
+// 4️⃣ Parent weekly report every Sunday at 8 PM
+cron.schedule("0 20 * * 0", () => {
+  console.log("👨‍👩‍👦 Cron: Sending parent weekly report...");
+  Object.entries(parents).forEach(([id, parent]) => {
+    console.log(`📊 Parent ${id} - Attendance: ${parent.attendance}, Marks: ${parent.marks}`);
+  });
+});
+
+// 5️⃣ Health check every 30 minutes
+cron.schedule("*/30 * * * *", () => {
+  console.log("✅ Cron: Server is alive & running...");
 });
 
 // ------------------ Start Server ------------------
