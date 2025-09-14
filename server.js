@@ -2,9 +2,9 @@
 import express from "express";
 import bodyParser from "body-parser";
 import mongoose from "mongoose";
-import cors from "cors";
 import dotenv from "dotenv";
-import { GoogleSpreadsheet } from "google-spreadsheet";
+import cors from "cors";
+import { getSheetData } from "./utils/sheets.js";
 import Faq from "./models/Faq.js";
 
 dotenv.config();
@@ -13,33 +13,13 @@ const app = express();
 app.use(bodyParser.json());
 app.use(cors());
 
-// ------------------ MongoDB ------------------
+// ------------------ MongoDB Connection ------------------
 mongoose
   .connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log("✅ MongoDB connected"))
-  .catch((err) => console.error("❌ MongoDB error:", err));
+  .catch((err) => console.error("❌ MongoDB connection error:", err));
 
-// ------------------ Google Sheets ------------------
-let sheet;
-async function initGoogleSheets() {
-  try {
-    const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID);
-
-    await doc.useServiceAccountAuth({
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
-    });
-
-    await doc.loadInfo();
-    sheet = doc.sheetsByIndex[0];
-    console.log(`✅ Google Sheets connected: ${doc.title}`);
-  } catch (err) {
-    console.error("❌ Google Sheets init error:", err.message);
-  }
-}
-initGoogleSheets();
-
-// ------------------ Dummy Data ------------------
+// ------------------ Hardcoded Data ------------------
 const students = {
   STU001: { name: "Manav Runthala", feesPending: 5000, scholarships: ["Computer Science"] },
   STU002: { name: "Daksh Beniwal", feesPending: 3000, scholarships: ["Mechanical Engineering"] },
@@ -56,7 +36,10 @@ const mentors = {
 
 // ------------------ Helper ------------------
 function sendResponse(text) {
-  return { fulfillmentText: text, fulfillmentMessages: [{ text: { text: [text] } }] };
+  return {
+    fulfillmentText: text,
+    fulfillmentMessages: [{ text: { text: [text] } }],
+  };
 }
 
 // ------------------ Webhook ------------------
@@ -145,36 +128,42 @@ app.post("/webhook", async (req, res) => {
     );
   }
 
-  // ------------------ FAQ Layer (Fallback) ------------------
-  const queryText = req.body.queryResult.queryText.toLowerCase();
-  let faqAnswer = null;
+  // ------------------ Fallback (FAQ Layer + Google Sheets + DB) ------------------
+  if (intent === "Default Fallback Intent") {
+    const query = req.body.queryResult.queryText.toLowerCase();
 
-  // 1. Check MongoDB FAQ
-  const faq = await Faq.findOne({ question: { $regex: queryText, $options: "i" } });
-  if (faq) faqAnswer = faq.answer;
-
-  // 2. Check Google Sheets FAQ (if no MongoDB match)
-  if (!faqAnswer && sheet) {
-    const rows = await sheet.getRows();
-    const foundRow = rows.find((r) => queryText.includes(r.question.toLowerCase()));
-    if (foundRow) faqAnswer = foundRow.answer;
-  }
-
-  // 3. Hardcoded fallback
-  if (!faqAnswer) {
-    const hardcodedFaq = {
-      "what is the fee deadline": "The fee deadline is usually the 5th of every month.",
-      "scholarship criteria": "Scholarships are awarded based on marks > 75% and attendance > 80%.",
-      "how to connect mentor": "Use the mentorship feature → say 'Connect me to a mentor'.",
+    // 1. Hardcoded FAQs
+    const hardcodedFAQs = {
+      "what is sih": "SIH (Smart India Hackathon) is a nationwide initiative to provide students a platform to solve pressing problems.",
+      "deadline for fees": "The fee deadline is usually the 10th of every month.",
     };
-    faqAnswer =
-      hardcodedFaq[queryText] || "I can guide you in Finance, Mentorship, Counseling, or Marketplace.";
+
+    for (let q in hardcodedFAQs) {
+      if (query.includes(q)) return res.json(sendResponse(hardcodedFAQs[q]));
+    }
+
+    // 2. Google Sheets
+    const sheetData = await getSheetData("Sheet1!A:Z");
+    for (let row of sheetData) {
+      if (query.includes(row.question.toLowerCase())) {
+        return res.json(sendResponse(row.answer));
+      }
+    }
+
+    // 3. MongoDB FAQ collection
+    const faq = await Faq.findOne({ question: new RegExp(query, "i") });
+    if (faq) return res.json(sendResponse(faq.answer));
+
+    // If nothing matches
+    return res.json(sendResponse("I can guide you in Finance, Mentorship, Counseling, or Marketplace."));
   }
 
-  return res.json(sendResponse(faqAnswer));
+  // ------------------ Default Catch-All ------------------
+  return res.json(sendResponse("I can guide you in Finance, Mentorship, Counseling, or Marketplace."));
 });
 
 // ------------------ Start Server ------------------
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
-
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
