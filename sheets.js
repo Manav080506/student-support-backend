@@ -1,30 +1,34 @@
-// sheets.js
-import { google } from "googleapis";
+// utils/sheets.js
+import fetch from "node-fetch";
 
-const SHEET_ID = "1QoLAe1-n6-O62LQSYqgNB--jfS10IMubsObvU_e49rI"; // your sheet ID
-const API_KEY = process.env.GOOGLE_SHEETS_API_KEY;
+const SHEET_ID = process.env.GOOGLE_SHEET_ID;
+const API_KEY = process.env.GOOGLE_API_KEY;
 
-export async function getSheetAnswer(query) {
+/**
+ * Fetch all rows from the first sheet
+ */
+export async function getSheetData(range = "Sheet1!A:Z") {
   try {
-    const sheets = google.sheets({ version: "v4", auth: API_KEY });
-    const range = "FAQ!A:B"; // Assuming Sheet tab is called FAQ with columns [Question, Answer]
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}?key=${API_KEY}`;
+    const response = await fetch(url);
+    const data = await response.json();
 
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
-      range,
+    if (!data.values) {
+      console.error("❌ No data found in Google Sheet");
+      return [];
+    }
+
+    // First row = headers
+    const headers = data.values[0];
+    const rows = data.values.slice(1).map(row => {
+      let obj = {};
+      headers.forEach((h, i) => (obj[h] = row[i] || ""));
+      return obj;
     });
 
-    const rows = response.data.values || [];
-    for (const row of rows) {
-      const q = row[0]?.toLowerCase();
-      const a = row[1];
-      if (query.toLowerCase().includes(q)) {
-        return a;
-      }
-    }
-    return null;
+    return rows;
   } catch (err) {
-    console.error("❌ Sheets fetch error:", err.message);
-    return null;
+    console.error("❌ Google Sheets fetch error:", err.message);
+    return [];
   }
 }
