@@ -170,7 +170,7 @@ app.post("/webhook", async (req, res) => {
       // 🧠 Sentiment Detection
       const result = sentiment.analyze(userQuery);
 
-      if (result.score < -2) {
+      if (result.score < -1) {
         return res.json(
           sendResponse(
             `😔 I sense you’re feeling low. You’re not alone.\n✔ Would you like me to connect you to a counselor?\n✔ Here are some quick self-help resources while you wait:\n- Breathing exercises\n- Stress management tips`
@@ -178,7 +178,7 @@ app.post("/webhook", async (req, res) => {
         );
       }
 
-      if (result.score > 2) {
+      if (result.score > 1) {
         return res.json(
           sendResponse(
             `😊 That’s great to hear! Keep up the positive energy.\n✔ Would you like me to suggest some productive activities or resources to use this energy well?`
@@ -218,8 +218,134 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// ------------------ Seeder, Badge, Reminder APIs + Cron ------------------
-// (Keep your existing /seed-faqs, /seed-badge-meta, /award-badge, /badges/:id, /reminders/:id, and cron jobs here)
+// ------------------ Seeder Routes ------------------
+app.get("/seed-faqs", async (req, res) => {
+  try {
+    const faqs = [
+      { category: "General", question: "What is SIH", answer: "💡 SIH (Smart India Hackathon) is a nationwide initiative by MHRD..." },
+      { category: "General", question: "Who are you", answer: "🤖 I am your Student Support Assistant, here to guide you..." },
+      { category: "Finance", question: "What scholarships are available", answer: "🎓 Scholarships are available for Computer Science, Mechanical, and Commerce students." },
+    ];
+    await Faq.deleteMany({});
+    await Faq.insertMany(faqs);
+    res.json({ message: "✅ FAQs seeded successfully!", faqs });
+  } catch (err) {
+    res.status(500).json({ error: "Seeder failed" });
+  }
+});
+
+app.get("/seed-badge-meta", async (req, res) => {
+  try {
+    const metas = [
+      { badgeName: "Finance Explorer", description: "Checked your finance summary", icon: "💰" },
+      { badgeName: "Engaged Parent", description: "Viewed child’s dashboard", icon: "👨‍👩‍👦" },
+      { badgeName: "Active Mentor", description: "Reviewed mentees", icon: "👨‍🏫" },
+      { badgeName: "Marketplace Explorer", description: "Browsed the marketplace", icon: "🛒" },
+      { badgeName: "Mentorship Seeker", description: "Requested a mentor", icon: "🎓" },
+      { badgeName: "Wellbeing Seeker", description: "Asked for counseling", icon: "🧠" },
+      { badgeName: "Consistency Badge", description: "Stayed active regularly", icon: "🎖️" },
+    ];
+    await BadgeMeta.deleteMany({});
+    await BadgeMeta.insertMany(metas);
+    res.json({ message: "✅ Badge metadata seeded successfully!", metas });
+  } catch (err) {
+    res.status(500).json({ error: "Seeder failed" });
+  }
+});
+
+// ------------------ Badge APIs ------------------
+app.post("/award-badge", async (req, res) => {
+  try {
+    const { studentId, badgeName, reason } = req.body;
+    const badge = await Badge.create({ studentId, badgeName, reason });
+    res.json({ message: "✅ Badge awarded", badge });
+  } catch (err) {
+    res.status(500).json({ error: "Award badge failed" });
+  }
+});
+
+app.get("/badges/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const badges = await Badge.find({ studentId: id }).sort({ awardedAt: -1 }).lean();
+    const metas = await BadgeMeta.find({}).lean();
+    const metaMap = {};
+    metas.forEach((m) => (metaMap[m.badgeName] = m));
+
+    const enriched = badges.map((b) => ({
+      ...b,
+      description: metaMap[b.badgeName]?.description || "",
+      icon: metaMap[b.badgeName]?.icon || "🏅",
+    }));
+
+    res.json({ badges: enriched });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch badges" });
+  }
+});
+
+// ------------------ Reminder API ------------------
+app.get("/reminders/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const reminders = await Reminder.find({ targetId: { $in: [id, "GENERIC"] } })
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .lean();
+    res.json({ reminders });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch reminders" });
+  }
+});
+
+// ------------------ Cron Jobs ------------------
+// Daily finance reminders at 9 AM
+cron.schedule("0 9 * * *", async () => {
+  console.log("🔔 Cron: Checking finance reminders...");
+  for (const [id, student] of Object.entries(students)) {
+    if (student.feesPending > 0) {
+      const message = `⚠️ Reminder: ${student.name} has pending fees of ₹${student.feesPending}`;
+      await Reminder.create({ type: "finance", message, targetId: id });
+      console.log(message);
+    }
+  }
+});
+
+// Weekly mentorship nudges every Monday at 10 AM
+cron.schedule("0 10 * * 1", async () => {
+  console.log("📅 Cron: Weekly mentorship nudges...");
+  for (const [id, mentor] of Object.entries(mentors)) {
+    const message = `👨‍🏫 Mentor ${id} has ${mentor.mentees.length} mentees. Check progress!`;
+    await Reminder.create({ type: "mentorship", message, targetId: id });
+    console.log(message);
+  }
+});
+
+// Daily consistency badge check at midnight
+cron.schedule("0 0 * * *", async () => {
+  console.log("🎖️ Cron: Awarding consistency badges...");
+  const message = "🎖️ Consistency Badge awarded for daily engagement!";
+  await Reminder.create({ type: "badge", message, targetId: "GENERIC" });
+  await Badge.create({ studentId: "GENERIC", badgeName: "Consistency Badge", reason: "Daily engagement" });
+  console.log(message);
+});
+
+// Parent weekly report every Sunday at 8 PM
+cron.schedule("0 20 * * 0", async () => {
+  console.log("👨‍👩‍👦 Cron: Sending parent weekly report...");
+  for (const [id, parent] of Object.entries(parents)) {
+    const message = `📊 Weekly Report - Child: ${parent.child}, Attendance: ${parent.attendance}, Marks: ${parent.marks}`;
+    await Reminder.create({ type: "parent", message, targetId: id });
+    console.log(message);
+  }
+});
+
+// Health check every 30 minutes
+cron.schedule("*/30 * * * *", async () => {
+  const message = "✅ Server is alive & running...";
+  await Reminder.create({ type: "health", message, targetId: "SYSTEM" });
+  console.log(message);
+});
 
 // ------------------ Start Server ------------------
 const PORT = process.env.PORT || 5000;
