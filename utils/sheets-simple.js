@@ -1,24 +1,43 @@
 // utils/sheets-simple.js
 import { GoogleSpreadsheet } from "google-spreadsheet";
+import dotenv from "dotenv";
+dotenv.config();
 
-const SHEET_ID = process.env.SHEET_ID; // sheet id only
-const SHEET_API_KEY = process.env.SHEET_API_KEY; // optional read-only key for public sheet
+let sheetCache = []; // cached rows
+let connected = false;
 
-export async function fetchSimpleSheetsFaqs() {
-  if (!SHEET_ID) return [];
-  try {
-    const doc = new GoogleSpreadsheet(SHEET_ID);
-    if (SHEET_API_KEY) await doc.useApiKey(SHEET_API_KEY);
-    // if sheet is public, useApiKey or no auth may work
-    await doc.loadInfo();
-    const sheet = doc.sheetsByIndex[0];
-    const rows = await sheet.getRows();
-    return rows.map(r => ({
-      question: (r.Question || r.question || "").toString().trim(),
-      answer: (r.Answer || r.answer || "").toString().trim()
-    })).filter(x => x.question && x.answer);
-  } catch (err) {
-    console.error("sheets-simple error:", err?.message || err);
-    return [];
+export async function initSheet() {
+  if (!process.env.GOOGLE_SHEET_ID || !process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+    console.warn("Google Sheets env not fully set — skipping sheet init.");
+    return;
   }
+  try {
+    const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID);
+    await doc.useServiceAccountAuth({
+      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+    });
+    await doc.loadInfo();
+    const sheet = doc.sheetsByIndex[0]; // first sheet
+    const rows = await sheet.getRows();
+    sheetCache = rows.map(r => ({
+      question: r.Question || r.question || "",
+      answer: r.Answer || r.answer || "",
+      category: r.Category || r.category || "General"
+    }));
+    connected = true;
+    console.log("✅ Google Sheet connected:", doc.title, "|", sheetCache.length, "rows");
+  } catch (err) {
+    console.error("❌ Google Sheets init error:", err.message);
+    connected = false;
+  }
+}
+
+export function getCachedSheetFaqs() {
+  return sheetCache || [];
+}
+
+// optional manual refresh
+export async function refreshSheetCache() {
+  await initSheet();
 }
