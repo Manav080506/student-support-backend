@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
 import cron from "node-cron";
+import Sentiment from "sentiment";
 
 import Faq from "./models/Faq.js";
 import Badge from "./models/Badge.js";
@@ -38,6 +39,9 @@ const parents = {
 const mentors = {
   MENTOR001: { mentees: ["STU001", "STU002"] },
 };
+
+// ------------------ Sentiment ------------------
+const sentiment = new Sentiment();
 
 // ------------------ Helper ------------------
 function sendResponse(text) {
@@ -163,9 +167,7 @@ app.post("/webhook", async (req, res) => {
     if (intent === "Default Fallback Intent") {
       const userQuery = req.body.queryResult.queryText;
 
-      // 🧠 1️⃣ Sentiment Detection
-      const Sentiment = (await import("sentiment")).default;
-      const sentiment = new Sentiment();
+      // 🧠 Sentiment Detection
       const result = sentiment.analyze(userQuery);
 
       if (result.score < -2) {
@@ -216,7 +218,7 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// ------------------ Seeder, Badge, Reminder APIs + Cron (same as before) ------------------
+// ------------------ Seeder, Badge, Reminder APIs + Cron ------------------
 // (Keep your existing /seed-faqs, /seed-badge-meta, /award-badge, /badges/:id, /reminders/:id, and cron jobs here)
 
 // ------------------ Start Server ------------------
