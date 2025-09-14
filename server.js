@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
 import cron from "node-cron";
+import Sentiment from "sentiment";
 
 import Faq from "./models/Faq.js";
 import Badge from "./models/Badge.js";
@@ -17,6 +18,24 @@ dotenv.config();
 const app = express();
 app.use(bodyParser.json());
 app.use(cors());
+
+const sentiment = new Sentiment();
+
+// ------------------ Emotion Helper ------------------
+function detectEmotion(text) {
+  const result = sentiment.analyze(text);
+  const score = result.score;
+
+  // 🚨 Severe distress keywords
+  const distressKeywords = ["suicide", "kill myself", "die", "end my life", "depressed"];
+  if (distressKeywords.some((w) => text.toLowerCase().includes(w))) {
+    return "severe";
+  }
+
+  if (score < -2) return "negative";
+  if (score > 2) return "positive";
+  return "neutral";
+}
 
 // ------------------ MongoDB Connection ------------------
 mongoose
@@ -44,23 +63,28 @@ function sendResponse(text) {
   return { fulfillmentText: text, fulfillmentMessages: [{ text: { text: [text] } }] };
 }
 
-function resolveUserId(params = {}) {
-  // prefer explicit userId, otherwise studentId/parentId/mentorId
-  return (
-    params.userId?.[0] ||
-    params.studentId?.[0] ||
-    params.parentId?.[0] ||
-    params.mentorId?.[0] ||
-    "GENERIC"
-  );
-}
-
 // ------------------ Webhook ------------------
 app.post("/webhook", async (req, res) => {
-  const intent = req.body?.queryResult?.intent?.displayName;
-  const params = req.body?.queryResult?.parameters || {};
+  const intent = req.body.queryResult.intent.displayName;
+  const params = req.body.queryResult.parameters;
+  const userQuery = req.body.queryResult.queryText;
 
   try {
+    // ------------------ Emotion Detection ------------------
+    const emotion = detectEmotion(userQuery);
+
+    if (emotion === "severe") {
+      return res.json(sendResponse(
+        `🚨 *Distress Alert* \nI sense you're in severe distress. You are not alone. \n✔ A counselor will be notified. \n📞 Please call: 1800-599-0019`
+      ));
+    }
+
+    if (emotion === "negative" && intent === "Default Fallback Intent") {
+      return res.json(sendResponse(
+        `💙 I hear you're not feeling well. \nWould you like me to connect you with a counselor or show self-care resources?`
+      ));
+    }
+
     // ------------------ Finance ------------------
     if (intent === "FinanceIntent") {
       const studentId = params.studentId?.[0];
@@ -69,7 +93,7 @@ app.post("/webhook", async (req, res) => {
       const student = students[studentId];
       if (!student) return res.json(sendResponse("⚠️ I couldn’t find details for that student ID."));
 
-      await Badge.create({ studentId, badgeName: "Finance Explorer", reason: "Checked finance summary" }).catch(() => null);
+      await Badge.create({ studentId, badgeName: "Finance Explorer", reason: "Checked finance summary" });
 
       return res.json(
         sendResponse(
@@ -86,7 +110,7 @@ app.post("/webhook", async (req, res) => {
       const parent = parents[parentId];
       if (!parent) return res.json(sendResponse("⚠️ I couldn’t find details for that parent ID."));
 
-      await Badge.create({ studentId: parentId, badgeName: "Engaged Parent", reason: "Viewed child dashboard" }).catch(() => null);
+      await Badge.create({ studentId: parentId, badgeName: "Engaged Parent", reason: "Viewed child dashboard" });
 
       return res.json(
         sendResponse(
@@ -103,7 +127,7 @@ app.post("/webhook", async (req, res) => {
       const mentor = mentors[mentorId];
       if (!mentor) return res.json(sendResponse("⚠️ I couldn’t find details for that mentor ID."));
 
-      await Badge.create({ studentId: mentorId, badgeName: "Active Mentor", reason: "Reviewed mentees" }).catch(() => null);
+      await Badge.create({ studentId: mentorId, badgeName: "Active Mentor", reason: "Reviewed mentees" });
 
       return res.json(
         sendResponse(
@@ -114,7 +138,7 @@ app.post("/webhook", async (req, res) => {
 
     // ------------------ Counseling ------------------
     if (intent === "CounselingIntent") {
-      await Badge.create({ studentId: "GENERIC", badgeName: "Wellbeing Seeker", reason: "Asked for counseling" }).catch(() => null);
+      await Badge.create({ studentId: "GENERIC", badgeName: "Wellbeing Seeker", reason: "Asked for counseling" });
 
       return res.json(
         sendResponse(
@@ -125,7 +149,6 @@ app.post("/webhook", async (req, res) => {
 
     // ------------------ Distress ------------------
     if (intent === "DistressIntent") {
-      // escalate / notify logic could be added here
       return res.json(
         sendResponse(
           `🚨 *Distress Alert*\nI sense you’re in distress. You are not alone.\n✔ A counselor has been notified to contact you immediately.\n✔ If it’s urgent, please call the helpline: 📞 1800-599-0019\n\n👉 Options:\n1️⃣ Connect to Counselor Now\n2️⃣ Get Relaxation Resources`
@@ -135,7 +158,7 @@ app.post("/webhook", async (req, res) => {
 
     // ------------------ Marketplace ------------------
     if (intent === "MarketplaceIntent") {
-      await Badge.create({ studentId: "GENERIC", badgeName: "Marketplace Explorer", reason: "Browsed marketplace" }).catch(() => null);
+      await Badge.create({ studentId: "GENERIC", badgeName: "Marketplace Explorer", reason: "Browsed marketplace" });
 
       return res.json(
         sendResponse(
@@ -146,7 +169,7 @@ app.post("/webhook", async (req, res) => {
 
     // ------------------ Mentorship ------------------
     if (intent === "MentorshipIntent") {
-      await Badge.create({ studentId: "GENERIC", badgeName: "Mentorship Seeker", reason: "Requested mentor" }).catch(() => null);
+      await Badge.create({ studentId: "GENERIC", badgeName: "Mentorship Seeker", reason: "Requested mentor" });
 
       return res.json(
         sendResponse(
@@ -157,13 +180,13 @@ app.post("/webhook", async (req, res) => {
 
     // ------------------ Reminder Intent ------------------
     if (intent === "ReminderIntent") {
-      const userId = resolveUserId(params);
+      const userId = params.studentId?.[0] || params.parentId?.[0] || params.mentorId?.[0] || "GENERIC";
       const reminders = await Reminder.find({ targetId: { $in: [userId, "GENERIC"] } })
         .sort({ createdAt: -1 })
         .limit(5)
         .lean();
 
-      if (!reminders || reminders.length === 0) {
+      if (reminders.length === 0) {
         return res.json(sendResponse("📭 You have no reminders at the moment."));
       }
 
@@ -172,47 +195,30 @@ app.post("/webhook", async (req, res) => {
     }
 
     // ------------------ Fallback with Multi-Layer ------------------
-    if (intent === "Default Fallback Intent" || !intent) {
-      const userQuery = (req.body?.queryResult?.queryText || "").trim();
-      const lowerQ = userQuery.toLowerCase();
-
-      // 1️⃣ Check MongoDB FAQs (loose regex)
-      const faq = await Faq.findOne({ question: new RegExp(userQuery, "i") }).lean();
+    if (intent === "Default Fallback Intent") {
+      // 1️⃣ Check MongoDB FAQs
+      const faq = await Faq.findOne({ question: new RegExp(userQuery, "i") });
       if (faq) return res.json(sendResponse(faq.answer));
 
-      // 2️⃣ Check Google Sheets (if available)
-      try {
-        const sheetData = await getSheetData();
-        const sheetFaq = sheetData.find((row) => row.Question && lowerQ.includes((row.Question || "").toLowerCase()));
-        if (sheetFaq && sheetFaq.Answer) return res.json(sendResponse(sheetFaq.Answer));
-      } catch (err) {
-        console.warn("❗ Sheets lookup failed:", err.message);
-      }
+      // 2️⃣ Check Google Sheets
+      const sheetData = await getSheetData();
+      const sheetFaq = sheetData.find((row) => row.Question && userQuery.toLowerCase().includes(row.Question.toLowerCase()));
+      if (sheetFaq) return res.json(sendResponse(sheetFaq.Answer));
 
-      // 3️⃣ Hardcoded fallback map (quick answers)
+      // 3️⃣ Hardcoded fallback
       const hardcodedFaqs = {
         "what is sih": "💡 *SIH (Smart India Hackathon)* is a nationwide initiative by MHRD to provide students a platform to solve pressing problems.",
         "who are you": "🤖 I am your Student Support Assistant, here to guide you with Finance, Mentorship, Counseling, and Marketplace queries.",
-        "hello": "Hi! 👋 I can help you with Finance, Mentorship, Counseling, Marketplace and more. What do you want to do?",
       };
-
-      for (const key in hardcodedFaqs) {
-        if (lowerQ.includes(key)) return res.json(sendResponse(hardcodedFaqs[key]));
-      }
+      const lowerQ = userQuery.toLowerCase();
+      if (hardcodedFaqs[lowerQ]) return res.json(sendResponse(hardcodedFaqs[lowerQ]));
 
       // 4️⃣ Final fallback
-      return res.json(
-        sendResponse(
-          "🙏 Sorry, I couldn’t find an exact answer. I can help with Finance, Mentorship, Counseling, Marketplace or show FAQs. Try: 'What is SIH' or 'Show my reminders'."
-        )
-      );
+      return res.json(sendResponse("🙏 Sorry, I couldn’t find an exact answer. But I can guide you in Finance, Mentorship, Counseling, or Marketplace."));
     }
-
-    // default
-    return res.json(sendResponse("I can guide you in Finance, Mentorship, Counseling, or Marketplace."));
   } catch (err) {
-    console.error("❌ Webhook error:", err);
-    return res.json(sendResponse("⚠️ Something went wrong while processing your request."));
+    console.error("❌ Webhook error:", err.message);
+    res.json(sendResponse("⚠️ Something went wrong while processing your request."));
   }
 });
 
@@ -228,7 +234,6 @@ app.get("/seed-faqs", async (req, res) => {
     await Faq.insertMany(faqs);
     res.json({ message: "✅ FAQs seeded successfully!", faqs });
   } catch (err) {
-    console.error("❌ Seeder error:", err);
     res.status(500).json({ error: "Seeder failed" });
   }
 });
@@ -248,7 +253,6 @@ app.get("/seed-badge-meta", async (req, res) => {
     await BadgeMeta.insertMany(metas);
     res.json({ message: "✅ Badge metadata seeded successfully!", metas });
   } catch (err) {
-    console.error("❌ Seeder error:", err);
     res.status(500).json({ error: "Seeder failed" });
   }
 });
@@ -260,7 +264,6 @@ app.post("/award-badge", async (req, res) => {
     const badge = await Badge.create({ studentId, badgeName, reason });
     res.json({ message: "✅ Badge awarded", badge });
   } catch (err) {
-    console.error("❌ Award badge error:", err);
     res.status(500).json({ error: "Award badge failed" });
   }
 });
@@ -281,159 +284,71 @@ app.get("/badges/:id", async (req, res) => {
 
     res.json({ badges: enriched });
   } catch (err) {
-    console.error("❌ Fetch badges error:", err);
     res.status(500).json({ error: "Failed to fetch badges" });
   }
 });
 
-// ------------------ Reminder APIs ------------------
+// ------------------ Reminder API ------------------
 app.get("/reminders/:id", async (req, res) => {
   try {
     const id = req.params.id;
     const reminders = await Reminder.find({ targetId: { $in: [id, "GENERIC"] } })
       .sort({ createdAt: -1 })
-      .limit(50)
+      .limit(10)
       .lean();
     res.json({ reminders });
   } catch (err) {
-    console.error("❌ Fetch reminders error:", err);
     res.status(500).json({ error: "Failed to fetch reminders" });
   }
 });
 
-app.post("/create-reminder", async (req, res) => {
-  try {
-    const { type = "general", message, targetId = "GENERIC", meta = {} } = req.body;
-    if (!message) return res.status(400).json({ error: "message required" });
-    const r = await Reminder.create({ type, message, targetId, meta });
-    res.json({ message: "✅ Reminder created", reminder: r });
-  } catch (err) {
-    console.error("❌ Create reminder error:", err);
-    res.status(500).json({ error: "Failed to create reminder" });
-  }
-});
-
-app.get("/seed-reminders", async (req, res) => {
-  try {
-    const sample = [
-      { type: "finance", message: "⚠️ Fee due in 2 days", targetId: "STU001" },
-      { type: "scholarship", message: "📝 Scholarship form closes tomorrow", targetId: "STU002" },
-      { type: "parent", message: "📊 Weekly report ready", targetId: "PARENT001" },
-      { type: "system", message: "✅ System health OK", targetId: "SYSTEM" },
-    ];
-    await Reminder.insertMany(sample);
-    res.json({ message: "✅ Sample reminders seeded", sample });
-  } catch (err) {
-    console.error("❌ Seed reminders error:", err);
-    res.status(500).json({ error: "Seeder failed" });
-  }
-});
-
-// Convenience: seed all (faqs + badge-meta + reminders)
-app.get("/seed-all", async (req, res) => {
-  try {
-    await Promise.all([
-      (async () => {
-        const faqs = [
-          { category: "General", question: "What is SIH", answer: "💡 SIH (Smart India Hackathon) is a nationwide initiative by MHRD to provide students a platform to solve pressing problems." },
-          { category: "General", question: "Who are you", answer: "🤖 I am your Student Support Assistant, here to guide you with Finance, Mentorship, Counseling, and Marketplace queries." },
-          { category: "Finance", question: "What scholarships are available", answer: "🎓 Scholarships are available for Computer Science, Mechanical, and Commerce students." },
-        ];
-        await Faq.deleteMany({});
-        await Faq.insertMany(faqs);
-      })(),
-      (async () => {
-        const metas = [
-          { badgeName: "Finance Explorer", description: "Checked your finance summary", icon: "💰" },
-          { badgeName: "Engaged Parent", description: "Viewed child’s dashboard", icon: "👨‍👩‍👦" },
-        ];
-        await BadgeMeta.deleteMany({});
-        await BadgeMeta.insertMany(metas);
-      })(),
-      (async () => {
-        const sample = [
-          { type: "finance", message: "⚠️ Fee due in 2 days", targetId: "STU001" },
-          { type: "parent", message: "📊 Weekly report ready", targetId: "PARENT001" },
-        ];
-        await Reminder.insertMany(sample);
-      })(),
-    ]);
-    res.json({ message: "✅ All seeded (faqs, badge meta, reminders)" });
-  } catch (err) {
-    console.error("❌ Seed-all error:", err);
-    res.status(500).json({ error: "seed-all failed" });
-  }
-});
-
 // ------------------ Cron Jobs ------------------
-// wrap each cron callback inside try/catch so a failure doesn't crash the process
-
 // Daily finance reminders at 9 AM
 cron.schedule("0 9 * * *", async () => {
-  try {
-    console.log("🔔 Cron: Checking finance reminders...");
-    for (const [id, student] of Object.entries(students)) {
-      if (student.feesPending > 0) {
-        const message = `⚠️ Reminder: ${student.name} has pending fees of ₹${student.feesPending}`;
-        await Reminder.create({ type: "finance", message, targetId: id }).catch(() => null);
-        console.log(message);
-      }
+  console.log("🔔 Cron: Checking finance reminders...");
+  for (const [id, student] of Object.entries(students)) {
+    if (student.feesPending > 0) {
+      const message = `⚠️ Reminder: ${student.name} has pending fees of ₹${student.feesPending}`;
+      await Reminder.create({ type: "finance", message, targetId: id });
+      console.log(message);
     }
-  } catch (err) {
-    console.error("❌ Cron (finance) error:", err.message);
   }
 });
 
 // Weekly mentorship nudges every Monday at 10 AM
 cron.schedule("0 10 * * 1", async () => {
-  try {
-    console.log("📅 Cron: Weekly mentorship nudges...");
-    for (const [id, mentor] of Object.entries(mentors)) {
-      const message = `👨‍🏫 Mentor ${id} has ${mentor.mentees.length} mentees. Check progress!`;
-      await Reminder.create({ type: "mentorship", message, targetId: id }).catch(() => null);
-      console.log(message);
-    }
-  } catch (err) {
-    console.error("❌ Cron (mentorship) error:", err.message);
+  console.log("📅 Cron: Weekly mentorship nudges...");
+  for (const [id, mentor] of Object.entries(mentors)) {
+    const message = `👨‍🏫 Mentor ${id} has ${mentor.mentees.length} mentees. Check progress!`;
+    await Reminder.create({ type: "mentorship", message, targetId: id });
+    console.log(message);
   }
 });
 
 // Daily consistency badge check at midnight
 cron.schedule("0 0 * * *", async () => {
-  try {
-    console.log("🎖️ Cron: Awarding consistency badges...");
-    const message = "🎖️ Consistency Badge awarded for daily engagement!";
-    await Reminder.create({ type: "badge", message, targetId: "GENERIC" }).catch(() => null);
-    await Badge.create({ studentId: "GENERIC", badgeName: "Consistency Badge", reason: "Daily engagement" }).catch(() => null);
-    console.log(message);
-  } catch (err) {
-    console.error("❌ Cron (consistency) error:", err.message);
-  }
+  console.log("🎖️ Cron: Awarding consistency badges...");
+  const message = "🎖️ Consistency Badge awarded for daily engagement!";
+  await Reminder.create({ type: "badge", message, targetId: "GENERIC" });
+  await Badge.create({ studentId: "GENERIC", badgeName: "Consistency Badge", reason: "Daily engagement" });
+  console.log(message);
 });
 
 // Parent weekly report every Sunday at 8 PM
 cron.schedule("0 20 * * 0", async () => {
-  try {
-    console.log("👨‍👩‍👦 Cron: Sending parent weekly report...");
-    for (const [id, parent] of Object.entries(parents)) {
-      const message = `📊 Weekly Report - Child: ${parent.child}, Attendance: ${parent.attendance}, Marks: ${parent.marks}`;
-      await Reminder.create({ type: "parent", message, targetId: id }).catch(() => null);
-      console.log(message);
-    }
-  } catch (err) {
-    console.error("❌ Cron (parent report) error:", err.message);
+  console.log("👨‍👩‍👦 Cron: Sending parent weekly report...");
+  for (const [id, parent] of Object.entries(parents)) {
+    const message = `📊 Weekly Report - Child: ${parent.child}, Attendance: ${parent.attendance}, Marks: ${parent.marks}`;
+    await Reminder.create({ type: "parent", message, targetId: id });
+    console.log(message);
   }
 });
 
 // Health check every 30 minutes
 cron.schedule("*/30 * * * *", async () => {
-  try {
-    const message = `✅ Server is alive & running at ${new Date().toISOString()}`;
-    await Reminder.create({ type: "health", message, targetId: "SYSTEM" }).catch(() => null);
-    console.log(message);
-  } catch (err) {
-    console.error("❌ Cron (health) error:", err.message);
-  }
+  const message = "✅ Server is alive & running...";
+  await Reminder.create({ type: "health", message, targetId: "SYSTEM" });
+  console.log(message);
 });
 
 // ------------------ Start Server ------------------
