@@ -14,5 +14,6 @@
     "google-spreadsheet": "^4.0.2",
     "node-cron": "^3.0.3",
     "sentiment": "^5.0.2"
+    "string-similarity": "^4.0.4"
   }
 }
