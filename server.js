@@ -4,6 +4,7 @@ import bodyParser from "body-parser";
 import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
+import cron from "node-cron";
 
 import Faq from "./models/Faq.js";
 import Badge from "./models/Badge.js";
@@ -56,7 +57,6 @@ app.post("/webhook", async (req, res) => {
       const student = students[studentId];
       if (!student) return res.json(sendResponse("⚠️ I couldn’t find details for that student ID."));
 
-      // 🎖️ Award Finance badge
       await Badge.create({ studentId, badgeName: "Finance Explorer", reason: "Checked finance summary" });
 
       return res.json(
@@ -236,6 +236,26 @@ app.get("/badges/:id", async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch badges" });
   }
+});
+
+// ------------------ Cron Jobs ------------------
+
+// Daily finance reminders at 9 AM
+cron.schedule("0 9 * * *", () => {
+  console.log("🔔 Cron: Checking finance reminders...");
+  Object.entries(students).forEach(([id, student]) => {
+    if (student.feesPending > 0) {
+      console.log(`⚠️ Reminder: ${student.name} has pending fees of ₹${student.feesPending}`);
+    }
+  });
+});
+
+// Weekly mentorship nudges every Monday at 10 AM
+cron.schedule("0 10 * * 1", () => {
+  console.log("📅 Cron: Weekly mentorship nudges...");
+  Object.entries(mentors).forEach(([id, mentor]) => {
+    console.log(`👨‍🏫 Mentor ${id} has ${mentor.mentees.length} mentees`);
+  });
 });
 
 // ------------------ Start Server ------------------
