@@ -22,9 +22,9 @@ mongoose
 
 // ------------------ Dummy Database ------------------
 const students = {
-  STU001: { name: "Manav Runthala", feesPending: 5000, scholarships: ["Computer Science"] },
-  STU002: { name: "Daksh Beniwal", feesPending: 3000, scholarships: ["Mechanical Engineering"] },
-  STU003: { name: "Disha Binani", feesPending: 0, scholarships: ["Commerce"] },
+  STU001: { name: "Manav Runthala", feesPending: 5000, scholarships: ["Computer Science"], lastFeeDate: "2025-03-15" },
+  STU002: { name: "Daksh Beniwal", feesPending: 3000, scholarships: ["Mechanical Engineering"], lastFeeDate: "2025-02-20" },
+  STU003: { name: "Disha Binani", feesPending: 0, scholarships: ["Commerce"], lastFeeDate: "2025-01-10" },
 };
 
 const parents = {
@@ -50,7 +50,6 @@ app.post("/webhook", async (req, res) => {
     if (intent === "FinanceIntent") {
       const studentId = params.studentId?.[0];
 
-      // Case 1: No Student ID → General Scholarships
       if (!studentId) {
         return res.json(
           sendResponse(
@@ -59,15 +58,20 @@ app.post("/webhook", async (req, res) => {
         );
       }
 
-      // Case 2: With Student ID
       const student = students[studentId];
       if (!student) return res.json(sendResponse("⚠️ I couldn’t find details for that student ID."));
+
+      // ✅ Add proactive fee reminder
+      let reminder = "";
+      if (student.feesPending > 0) {
+        reminder = `\n\n⚠️ Reminder: ₹${student.feesPending} pending. Last paid on ${student.lastFeeDate}.`;
+      }
 
       return res.json(
         sendResponse(
           `💰 *Finance Summary*\n- Student: ${student.name}\n- Pending Fees: ₹${student.feesPending}\n- Scholarships: ${student.scholarships.join(
             ", "
-          )}\n\n👉 Options:\n1️⃣ Show Eligible Scholarships\n2️⃣ Show Fee Deadlines`
+          )}${reminder}\n\n👉 Options:\n1️⃣ Show Eligible Scholarships\n2️⃣ Show Fee Deadlines`
         )
       );
     }
@@ -85,9 +89,16 @@ app.post("/webhook", async (req, res) => {
       const parent = parents[parentId];
       if (!parent) return res.json(sendResponse("⚠️ I couldn’t find details for that parent ID."));
 
+      // ✅ Proactive Attendance Alert
+      let alert = "";
+      const attendanceValue = parseInt(parent.attendance.replace("%", ""));
+      if (attendanceValue < 75) {
+        alert = "\n\n⚠️ Alert: Attendance is below 75%. Should I connect you with a mentor?";
+      }
+
       return res.json(
         sendResponse(
-          `👨‍👩‍👦 *Parent Dashboard*\nParent ID: ${parentId}\nChild: ${parent.child}\n\n📊 Attendance: ${parent.attendance}\n📝 Marks: ${parent.marks}\n💰 Fees Pending: ₹${parent.feesPending}\n\n👉 Options:\n1️⃣ View Scholarship Updates\n2️⃣ View Upcoming Deadlines`
+          `👨‍👩‍👦 *Parent Dashboard*\nParent ID: ${parentId}\nChild: ${parent.child}\n\n📊 Attendance: ${parent.attendance}\n📝 Marks: ${parent.marks}\n💰 Fees Pending: ₹${parent.feesPending}${alert}\n\n👉 Options:\n1️⃣ View Scholarship Updates\n2️⃣ View Upcoming Deadlines`
         )
       );
     }
@@ -160,6 +171,14 @@ app.post("/webhook", async (req, res) => {
       );
     }
 
+    // ------------------ Proactive Reminder Intent ------------------
+    if (intent === "ReminderIntent") {
+      const reminderTime = params.time || "8:00 PM";
+      return res.json(
+        sendResponse(`⏰ Okay! I’ll remind you to study daily at ${reminderTime}. (Feature demo for judges ✅)`)
+      );
+    }
+
     // ------------------ Fallback with Multi-Layer ------------------
     if (intent === "Default Fallback Intent") {
       const userQuery = req.body.queryResult.queryText;
@@ -177,19 +196,15 @@ app.post("/webhook", async (req, res) => {
 
       // 3️⃣ Hardcoded fallback
       const hardcodedFaqs = {
-        "what is sih":
-          "💡 *SIH (Smart India Hackathon)* is a nationwide initiative by MHRD to provide students a platform to solve pressing problems.",
-        "who are you":
-          "🤖 I am your Student Support Assistant, here to guide you with Finance, Mentorship, Counseling, and Marketplace queries.",
+        "what is sih": "💡 *SIH (Smart India Hackathon)* is a nationwide initiative by MHRD to provide students a platform to solve pressing problems.",
+        "who are you": "🤖 I am your Student Support Assistant, here to guide you with Finance, Mentorship, Counseling, and Marketplace queries.",
       };
       const lowerQ = userQuery.toLowerCase();
       if (hardcodedFaqs[lowerQ]) return res.json(sendResponse(hardcodedFaqs[lowerQ]));
 
       // 4️⃣ Final fallback
       return res.json(
-        sendResponse(
-          "🙏 Sorry, I couldn’t find an exact answer. But I can guide you in Finance, Mentorship, Counseling, or Marketplace."
-        )
+        sendResponse("🙏 Sorry, I couldn’t find an exact answer. But I can guide you in Finance, Mentorship, Counseling, or Marketplace.")
       );
     }
   } catch (err) {
@@ -202,23 +217,9 @@ app.post("/webhook", async (req, res) => {
 app.get("/seed-faqs", async (req, res) => {
   try {
     const faqs = [
-      {
-        category: "General",
-        question: "What is SIH",
-        answer:
-          "💡 SIH (Smart India Hackathon) is a nationwide initiative by MHRD to provide students a platform to solve pressing problems.",
-      },
-      {
-        category: "General",
-        question: "Who are you",
-        answer:
-          "🤖 I am your Student Support Assistant, here to guide you with Finance, Mentorship, Counseling, and Marketplace queries.",
-      },
-      {
-        category: "Finance",
-        question: "What scholarships are available",
-        answer: "🎓 Scholarships are available for Computer Science, Mechanical, and Commerce students.",
-      },
+      { category: "General", question: "What is SIH", answer: "💡 SIH (Smart India Hackathon) is a nationwide initiative by MHRD to provide students a platform to solve pressing problems." },
+      { category: "General", question: "Who are you", answer: "🤖 I am your Student Support Assistant, here to guide you with Finance, Mentorship, Counseling, and Marketplace queries." },
+      { category: "Finance", question: "What scholarships are available", answer: "🎓 Scholarships are available for Computer Science, Mechanical, and Commerce students." },
     ];
 
     await Faq.deleteMany({});
