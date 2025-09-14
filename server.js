@@ -23,7 +23,7 @@ app.use(cors());
 
 // ---------- Config ----------
 const ADMIN_KEY = process.env.ADMIN_KEY || "admin-secret";
-const AUTO_SEED = process.env.AUTO_SEED === "true"; // set to true to auto-run seeders on start
+const AUTO_SEED = process.env.AUTO_SEED === "true";
 const PORT = process.env.PORT || 5000;
 
 // ---------- Basic health ----------
@@ -37,7 +37,6 @@ mongoose
   .then(() => {
     console.log("✅ MongoDB connected");
     if (AUTO_SEED) {
-      // Run seeder once on startup (best-effort)
       (async () => {
         try {
           console.log("🔁 AUTO_SEED is enabled — seeding FAQs & badge meta...");
@@ -230,10 +229,19 @@ app.post("/webhook", async (req, res) => {
     if (intent === "ReminderIntent") {
       const userId = params.studentId?.[0] || params.parentId?.[0] || params.mentorId?.[0] || userIDParam || "GENERIC";
       const reminders = await Reminder.find({ targetId: { $in: [userId, "GENERIC"] } }).sort({ createdAt: -1 }).limit(5).lean();
+
       const resp = reminders.length
         ? `📌 *Your Latest Reminders:*\n${reminders.map((r, i) => `${i + 1}. ${r.message}`).join("\n")}\n\n${getAffirmation(studentProfile?.name)}`
         : `📭 You have no reminders at the moment.\n\n${getAffirmation(studentProfile?.name)}`;
-      await logChat({ query: userQueryRaw, response: resp, intent, matchSource: reminders.length ? "database" : "none", matchedQuestion: "Reminders", similarity: reminders.length ? 1 : 0 });
+
+      await logChat({
+        query: userQueryRaw,
+        response: resp,
+        intent,
+        matchSource: reminders.length ? "database" : "none",
+        matchedQuestion: "Reminders",
+        similarity: reminders.length ? 1 : 0,
+      });
       return res.json(sendResponse(resp));
     }
 
@@ -250,19 +258,33 @@ app.post("/webhook", async (req, res) => {
         const sentimentResult = sentiment.analyze(userQueryRaw);
         if (sentimentResult.score <= -3) {
           const resp = `😔 I sense you’re feeling low. Would you like me to connect you to a counselor? If it's urgent, call 📞 1800-599-0019.\n\n${getAffirmation(studentProfile?.name)}`;
-          await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "sentiment", matchedQuestion: "sentiment_alert", similarity: Math.min(Math.abs(sentimentResult.score) / 5, 1) });
+          await logChat({
+            query: userQueryRaw,
+            response: resp,
+            intent,
+            matchSource: "sentiment",
+            matchedQuestion: "sentiment_alert",
+            similarity: Math.min(Math.abs(sentimentResult.score) / 5, 1),
+          });
           return res.json(sendResponse(resp));
         }
         if (sentimentResult.score >= 3) {
           const resp = `😊 I'm glad you're feeling good! Want study tips or a quick productivity suggestion? ${getAffirmation(studentProfile?.name)}`;
-          await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "sentiment", matchedQuestion: "sentiment_positive", similarity: Math.min(sentimentResult.score / 5, 1) });
+          await logChat({
+            query: userQueryRaw,
+            response: resp,
+            intent,
+            matchSource: "sentiment",
+            matchedQuestion: "sentiment_positive",
+            similarity: Math.min(sentimentResult.score / 5, 1),
+          });
           return res.json(sendResponse(resp));
         }
       } catch (err) {
         console.warn("⚠️ Sentiment analysis failed:", err.message);
       }
 
-      // 1) direct/regex FAQ lookup
+      // 1) Direct/regex FAQ lookup
       try {
         const faq = await Faq.findOne({ question: new RegExp(userQueryRaw, "i") });
         if (faq) {
@@ -271,15 +293,22 @@ app.post("/webhook", async (req, res) => {
           return res.json(sendResponse(resp));
         }
 
-        // fuzzy search in FAQ
+        // fuzzy against FAQ questions
         const allFaqs = await Faq.find({}, { question: 1, answer: 1 }).lean();
         if (allFaqs?.length) {
           const questions = allFaqs.map((f) => f.question);
           const match = fuzzyBestMatch(userQueryRaw, questions);
           if (match && match.bestScore >= 0.6) {
             const matchedFaq = allFaqs.find((f) => f.question === match.bestMatchText);
-            const resp = `${matchedFaq?.answer || "Sorry, couldn't fetch the answer."}\n\n${getAffirmation(studentProfile?.name)}`;
-            await logChat({ query: userQueryRaw, response: resp, intent, matchedQuestion: matchedFaq?.question, matchSource: "faq-fuzzy", similarity: match.bestScore });
+            const resp = `${matchedFaq?.answer || "Sorry, couldn't fetch answer."}\n\n${getAffirmation(studentProfile?.name)}`;
+            await logChat({
+              query: userQueryRaw,
+              response: resp,
+              intent,
+              matchedQuestion: matchedFaq?.question,
+              matchSource: "faq-fuzzy",
+              similarity: match.bestScore,
+            });
             return res.json(sendResponse(resp));
           }
         }
@@ -289,14 +318,21 @@ app.post("/webhook", async (req, res) => {
 
       // 2) Google Sheets fuzzy lookup
       try {
-        const sheetData = await getSheetData(); // expected [{ Question, Answer }]
+        const sheetData = await getSheetData(); // expected array of { Question, Answer }
         if (sheetData?.length) {
           const qs = sheetData.filter((r) => r.Question).map((r) => r.Question);
           const match = fuzzyBestMatch(userQueryRaw, qs);
           if (match && match.bestScore >= 0.6) {
             const row = sheetData.find((r) => r.Question === match.bestMatchText);
             const resp = `${row?.Answer || row?.answer || "Sorry, couldn't fetch sheet answer."}\n\n${getAffirmation(studentProfile?.name)}`;
-            await logChat({ query: userQueryRaw, response: resp, intent, matchedQuestion: row?.Question, matchSource: "sheet-fuzzy", similarity: match.bestScore });
+            await logChat({
+              query: userQueryRaw,
+              response: resp,
+              intent,
+              matchedQuestion: row?.Question,
+              matchSource: "sheet-fuzzy",
+              similarity: match.bestScore,
+            });
             return res.json(sendResponse(resp));
           }
         }
@@ -304,34 +340,63 @@ app.post("/webhook", async (req, res) => {
         console.warn("⚠️ Google Sheets lookup failed:", err.message);
       }
 
-      // 3) hardcoded map (direct + fuzzy)
+      // 3) Hardcoded fallback (direct + fuzzy)
       const hardcodedFaqs = {
         "what is sih": "💡 SIH (Smart India Hackathon) is a nationwide initiative by MHRD to provide students a platform to solve pressing problems.",
         "who are you": "🤖 I am your Student Support Assistant, here to guide you in Finance, Mentorship, Counseling, and Marketplace.",
       };
+
       const lowerQ = userQueryRaw.toLowerCase();
       if (hardcodedFaqs[lowerQ]) {
         const resp = `${hardcodedFaqs[lowerQ]}\n\n${getAffirmation(studentProfile?.name)}`;
         await logChat({ query: userQueryRaw, response: resp, intent, matchedQuestion: lowerQ, matchSource: "hardcoded", similarity: 1 });
         return res.json(sendResponse(resp));
       }
+
       const hcMatch = fuzzyBestMatch(lowerQ, Object.keys(hardcodedFaqs));
       if (hcMatch && hcMatch.bestScore >= 0.6) {
         const resp = `${hardcodedFaqs[hcMatch.bestMatchText]}\n\n${getAffirmation(studentProfile?.name)}`;
-        await logChat({ query: userQueryRaw, response: resp, intent, matchedQuestion: hcMatch.bestMatchText, matchSource: "hardcoded-fuzzy", similarity: hcMatch.bestScore });
+        await logChat({
+          query: userQueryRaw,
+          response: resp,
+          intent,
+          matchedQuestion: hcMatch.bestMatchText,
+          matchSource: "hardcoded-fuzzy",
+          similarity: hcMatch.bestScore,
+        });
         return res.json(sendResponse(resp));
       }
 
-      // 4) synonyms for Counseling/Distress
-      const lower = lowerQ;
-      if (synonyms.counseling.some((w) => lower.includes(w))) {
+      // 4) synonyms for Counseling/Distress/Finance/Mentorship/Marketplace
+      if (synonyms.counseling.some((w) => lowerQ.includes(w))) {
         const resp = `🧠 It looks like you'd like counseling. I can connect you to a counselor. ${getAffirmation(studentProfile?.name)}`;
         await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "synonym", matchedQuestion: "counseling_synonym", similarity: 1 });
         return res.json(sendResponse(resp));
       }
-      if (synonyms.distress.some((w) => lower.includes(w))) {
+      if (synonyms.distress.some((w) => lowerQ.includes(w))) {
         const resp = `🚨 I sense distress. If you are in immediate danger call local emergency services. Helpline: 📞 1800-599-0019. ${getAffirmation(studentProfile?.name)}`;
         await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "synonym", matchedQuestion: "distress_synonym", similarity: 1 });
+        return res.json(sendResponse(resp));
+      }
+
+      // Finance synonyms
+      if (["fees", "fee", "scholarship", "scholarships", "finance", "financial aid", "dues", "pending payment"].some((w) => lowerQ.includes(w))) {
+        const resp = `💰 It looks like you want finance help. Please provide your Student ID (e.g., STU001).`;
+        await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "synonym", matchedQuestion: "finance_synonym", similarity: 1 });
+        return res.json(sendResponse(resp));
+      }
+
+      // Mentorship synonyms
+      if (["mentor", "mentorship", "senior", "guide", "career guidance", "help me with studies"].some((w) => lowerQ.includes(w))) {
+        const resp = `👨‍🏫 It looks like you want a mentor. We have seniors available in CS, Mechanical, Commerce, AI/DS.`;
+        await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "synonym", matchedQuestion: "mentorship_synonym", similarity: 1 });
+        return res.json(sendResponse(resp));
+      }
+
+      // Marketplace synonyms
+      if (["sell", "buy", "marketplace", "books", "notes", "calculator", "essentials", "for sale", "listing", "second-hand"].some((w) => lowerQ.includes(w))) {
+        const resp = `🛒 It looks like you're looking for marketplace items. You can buy/sell books, calculators, and hostel essentials here.`;
+        await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "synonym", matchedQuestion: "marketplace_synonym", similarity: 1 });
         return res.json(sendResponse(resp));
       }
 
@@ -341,7 +406,7 @@ app.post("/webhook", async (req, res) => {
       return res.json(sendResponse(finalResp));
     }
 
-    // Unhandled intent
+    // Unhandled intent fallback
     const unknownResp = `I can guide you in Finance, Mentorship, Counseling, or Marketplace. ${getAffirmation(studentProfile?.name)}`;
     await logChat({ query: userQueryRaw, response: unknownResp, intent, matchSource: "none", similarity: 0 });
     return res.json(sendResponse(unknownResp));
@@ -381,6 +446,27 @@ async function seedBadgeMeta() {
   await BadgeMeta.insertMany(metas);
   return { message: "✅ Badge metadata seeded successfully!", metas };
 }
+
+// ---------- Optional public seed endpoints (useful for dev) ----------
+app.get("/seed-faqs", async (req, res) => {
+  try {
+    const result = await seedFaqs();
+    res.json(result);
+  } catch (err) {
+    console.error("❌ Seeder error:", err.message);
+    res.status(500).json({ error: "Seeder failed" });
+  }
+});
+
+app.get("/seed-badge-meta", async (req, res) => {
+  try {
+    const result = await seedBadgeMeta();
+    res.json(result);
+  } catch (err) {
+    console.error("❌ Seeder error:", err.message);
+    res.status(500).json({ error: "Seeder failed" });
+  }
+});
 
 // ---------- Admin protection middleware ----------
 function requireAdmin(req, res, next) {
@@ -532,7 +618,7 @@ app.get("/reminders/:id", async (req, res) => {
   }
 });
 
-// ---------- Cron jobs (same as before) ----------
+// ---------- Cron jobs ----------
 // Daily finance reminders at 9 AM
 cron.schedule("0 9 * * *", async () => {
   try {
