@@ -5,7 +5,6 @@ import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
 import cron from "node-cron";
-import Sentiment from "sentiment";
 
 import Faq from "./models/Faq.js";
 import Badge from "./models/Badge.js";
@@ -160,50 +159,55 @@ app.post("/webhook", async (req, res) => {
       return res.json(sendResponse(`📌 *Your Latest Reminders:*\n${reminderText}`));
     }
 
-    // ------------------ Fallback with Sentiment + Multi-Layer ------------------
+    // ------------------ Fallback with Multi-Layer + Sentiment ------------------
     if (intent === "Default Fallback Intent") {
       const userQuery = req.body.queryResult.queryText;
 
-      // 🧠 Sentiment Analysis
+      // 🧠 1️⃣ Sentiment Detection
+      const Sentiment = (await import("sentiment")).default;
       const sentiment = new Sentiment();
-      const analysis = sentiment.analyze(userQuery);
+      const result = sentiment.analyze(userQuery);
 
-      if (analysis.score < -2) {
+      if (result.score < -2) {
         return res.json(
-          sendResponse(`😔 I sense you're feeling low.\n💡 You're not alone. Would you like me to connect you with a counselor?`)
+          sendResponse(
+            `😔 I sense you’re feeling low. You’re not alone.\n✔ Would you like me to connect you to a counselor?\n✔ Here are some quick self-help resources while you wait:\n- Breathing exercises\n- Stress management tips`
+          )
         );
       }
 
-      if (analysis.score > 2) {
+      if (result.score > 2) {
         return res.json(
-          sendResponse(`😊 I’m glad to hear that you’re feeling positive today! Keep it up!`)
+          sendResponse(
+            `😊 That’s great to hear! Keep up the positive energy.\n✔ Would you like me to suggest some productive activities or resources to use this energy well?`
+          )
         );
       }
 
-      // 1️⃣ Check MongoDB FAQs
+      // 2️⃣ Check MongoDB FAQs
       const faq = await Faq.findOne({ question: new RegExp(userQuery, "i") });
       if (faq) return res.json(sendResponse(faq.answer));
 
-      // 2️⃣ Check Google Sheets
+      // 3️⃣ Check Google Sheets
       const sheetData = await getSheetData();
       const sheetFaq = sheetData.find(
         (row) => row.Question && userQuery.toLowerCase().includes(row.Question.toLowerCase())
       );
       if (sheetFaq) return res.json(sendResponse(sheetFaq.Answer));
 
-      // 3️⃣ Hardcoded fallback
+      // 4️⃣ Hardcoded fallback
       const hardcodedFaqs = {
-        "what is sih":
-          "💡 *SIH (Smart India Hackathon)* is a nationwide initiative by MHRD to provide students a platform to solve pressing problems.",
-        "who are you":
-          "🤖 I am your Student Support Assistant, here to guide you with Finance, Mentorship, Counseling, and Marketplace queries.",
+        "what is sih": "💡 *SIH (Smart India Hackathon)* is a nationwide initiative by MHRD...",
+        "who are you": "🤖 I am your Student Support Assistant, here to guide you...",
       };
       const lowerQ = userQuery.toLowerCase();
       if (hardcodedFaqs[lowerQ]) return res.json(sendResponse(hardcodedFaqs[lowerQ]));
 
-      // 4️⃣ Final fallback
+      // 5️⃣ Final fallback
       return res.json(
-        sendResponse("🙏 Sorry, I couldn’t find an exact answer. But I can guide you in Finance, Mentorship, Counseling, or Marketplace.")
+        sendResponse(
+          "🙏 Sorry, I couldn’t find an exact answer. But I can guide you in Finance, Mentorship, Counseling, or Marketplace."
+        )
       );
     }
   } catch (err) {
@@ -211,6 +215,9 @@ app.post("/webhook", async (req, res) => {
     res.json(sendResponse("⚠️ Something went wrong while processing your request."));
   }
 });
+
+// ------------------ Seeder, Badge, Reminder APIs + Cron (same as before) ------------------
+// (Keep your existing /seed-faqs, /seed-badge-meta, /award-badge, /badges/:id, /reminders/:id, and cron jobs here)
 
 // ------------------ Start Server ------------------
 const PORT = process.env.PORT || 5000;
