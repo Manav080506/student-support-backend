@@ -9,6 +9,7 @@ import cron from "node-cron";
 import Faq from "./models/Faq.js";
 import Badge from "./models/Badge.js";
 import BadgeMeta from "./models/BadgeMeta.js";
+import Reminder from "./models/Reminder.js";
 import { getSheetData } from "./utils/sheets.js";
 
 dotenv.config();
@@ -142,6 +143,22 @@ app.post("/webhook", async (req, res) => {
       );
     }
 
+    // ------------------ Reminder Intent ------------------
+    if (intent === "ReminderIntent") {
+      const userId = params.studentId?.[0] || params.parentId?.[0] || params.mentorId?.[0] || "GENERIC";
+      const reminders = await Reminder.find({ targetId: { $in: [userId, "GENERIC"] } })
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .lean();
+
+      if (reminders.length === 0) {
+        return res.json(sendResponse("📭 You have no reminders at the moment."));
+      }
+
+      const reminderText = reminders.map((r, i) => `${i + 1}. ${r.message}`).join("\n");
+      return res.json(sendResponse(`📌 *Your Latest Reminders:*\n${reminderText}`));
+    }
+
     // ------------------ Fallback with Multi-Layer ------------------
     if (intent === "Default Fallback Intent") {
       const userQuery = req.body.queryResult.queryText;
@@ -238,43 +255,67 @@ app.get("/badges/:id", async (req, res) => {
   }
 });
 
+// ------------------ Reminder API ------------------
+app.get("/reminders/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const reminders = await Reminder.find({ targetId: { $in: [id, "GENERIC"] } })
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .lean();
+    res.json({ reminders });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch reminders" });
+  }
+});
+
 // ------------------ Cron Jobs ------------------
-
-// 1️⃣ Daily finance reminders at 9 AM
-cron.schedule("0 9 * * *", () => {
+// Daily finance reminders at 9 AM
+cron.schedule("0 9 * * *", async () => {
   console.log("🔔 Cron: Checking finance reminders...");
-  Object.entries(students).forEach(([id, student]) => {
+  for (const [id, student] of Object.entries(students)) {
     if (student.feesPending > 0) {
-      console.log(`⚠️ Reminder: ${student.name} has pending fees of ₹${student.feesPending}`);
+      const message = `⚠️ Reminder: ${student.name} has pending fees of ₹${student.feesPending}`;
+      await Reminder.create({ type: "finance", message, targetId: id });
+      console.log(message);
     }
-  });
+  }
 });
 
-// 2️⃣ Weekly mentorship nudges every Monday at 10 AM
-cron.schedule("0 10 * * 1", () => {
+// Weekly mentorship nudges every Monday at 10 AM
+cron.schedule("0 10 * * 1", async () => {
   console.log("📅 Cron: Weekly mentorship nudges...");
-  Object.entries(mentors).forEach(([id, mentor]) => {
-    console.log(`👨‍🏫 Mentor ${id} has ${mentor.mentees.length} mentees`);
-  });
+  for (const [id, mentor] of Object.entries(mentors)) {
+    const message = `👨‍🏫 Mentor ${id} has ${mentor.mentees.length} mentees. Check progress!`;
+    await Reminder.create({ type: "mentorship", message, targetId: id });
+    console.log(message);
+  }
 });
 
-// 3️⃣ Daily consistency badge check at midnight
+// Daily consistency badge check at midnight
 cron.schedule("0 0 * * *", async () => {
   console.log("🎖️ Cron: Awarding consistency badges...");
+  const message = "🎖️ Consistency Badge awarded for daily engagement!";
+  await Reminder.create({ type: "badge", message, targetId: "GENERIC" });
   await Badge.create({ studentId: "GENERIC", badgeName: "Consistency Badge", reason: "Daily engagement" });
+  console.log(message);
 });
 
-// 4️⃣ Parent weekly report every Sunday at 8 PM
-cron.schedule("0 20 * * 0", () => {
+// Parent weekly report every Sunday at 8 PM
+cron.schedule("0 20 * * 0", async () => {
   console.log("👨‍👩‍👦 Cron: Sending parent weekly report...");
-  Object.entries(parents).forEach(([id, parent]) => {
-    console.log(`📊 Parent ${id} - Attendance: ${parent.attendance}, Marks: ${parent.marks}`);
-  });
+  for (const [id, parent] of Object.entries(parents)) {
+    const message = `📊 Weekly Report - Child: ${parent.child}, Attendance: ${parent.attendance}, Marks: ${parent.marks}`;
+    await Reminder.create({ type: "parent", message, targetId: id });
+    console.log(message);
+  }
 });
 
-// 5️⃣ Health check every 30 minutes
-cron.schedule("*/30 * * * *", () => {
-  console.log("✅ Cron: Server is alive & running...");
+// Health check every 30 minutes
+cron.schedule("*/30 * * * *", async () => {
+  const message = "✅ Server is alive & running...";
+  await Reminder.create({ type: "health", message, targetId: "SYSTEM" });
+  console.log(message);
 });
 
 // ------------------ Start Server ------------------
