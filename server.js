@@ -11,7 +11,7 @@ import Faq from "./models/Faq.js";
 import Badge from "./models/Badge.js";
 import BadgeMeta from "./models/BadgeMeta.js";
 import Reminder from "./models/Reminder.js";
-import ChatLog from "./models/ChatLog.js"; // <-- Chat log model
+import ChatLog from "./models/ChatLog.js"; // Chat log model
 import { getSheetData } from "./utils/sheets.js";
 
 dotenv.config();
@@ -70,30 +70,36 @@ async function logChat({ query, response, intent, matchedQuestion = null, matchS
 
 // ------------------ Webhook ------------------
 app.post("/webhook", async (req, res) => {
-  const intent = req.body.queryResult.intent.displayName;
-  const params = req.body.queryResult.parameters;
+  const intent = req.body.queryResult?.intent?.displayName || "unknown";
+  const params = req.body.queryResult?.parameters || {};
 
   try {
     // ------------------ Finance ------------------
     if (intent === "FinanceIntent") {
-      const studentId = params.studentId?.[0];
+      // accept both studentId and userID for robustness
+      const studentId = params.studentId?.[0] || params.userID || params.userID?.[0];
       if (!studentId) {
         const resp = "Please provide your Student ID (e.g., STU001).";
-        await logChat({ query: req.body.queryResult.queryText, response: resp, intent, matchSource: "none", similarity: 0 });
+        await logChat({ query: req.body.queryResult.queryText || "", response: resp, intent, matchSource: "none", similarity: 0 });
         return res.json(sendResponse(resp));
       }
 
       const student = students[studentId];
       if (!student) {
         const resp = "⚠️ I couldn’t find details for that student ID.";
-        await logChat({ query: req.body.queryResult.queryText, response: resp, intent, matchSource: "none", similarity: 0 });
+        await logChat({ query: req.body.queryResult.queryText || "", response: resp, intent, matchSource: "none", similarity: 0 });
         return res.json(sendResponse(resp));
       }
 
-      await Badge.create({ studentId, badgeName: "Finance Explorer", reason: "Checked finance summary" });
+      // Award badge (non-blocking)
+      try {
+        await Badge.create({ studentId, badgeName: "Finance Explorer", reason: "Checked finance summary" });
+      } catch (e) {
+        console.warn("⚠️ Badge create failed:", e.message);
+      }
 
       const resp = `💰 *Finance Summary*\n- Student: ${student.name}\n- Pending Fees: ₹${student.feesPending}\n- Scholarships: ${student.scholarships.join(", ")}\n\n👉 Options:\n1️⃣ Show Eligible Scholarships\n2️⃣ Show Fee Deadlines`;
-      await logChat({ query: req.body.queryResult.queryText, response: resp, intent, matchSource: "database", matchedQuestion: "FinanceSummary", similarity: 1 });
+      await logChat({ query: req.body.queryResult.queryText || "", response: resp, intent, matchSource: "database", matchedQuestion: "FinanceSummary", similarity: 1 });
 
       return res.json(sendResponse(resp));
     }
@@ -103,21 +109,25 @@ app.post("/webhook", async (req, res) => {
       const parentId = params.parentId?.[0];
       if (!parentId) {
         const resp = "Please provide your Parent ID (e.g., PARENT001).";
-        await logChat({ query: req.body.queryResult.queryText, response: resp, intent, matchSource: "none", similarity: 0 });
+        await logChat({ query: req.body.queryResult.queryText || "", response: resp, intent, matchSource: "none", similarity: 0 });
         return res.json(sendResponse(resp));
       }
 
       const parent = parents[parentId];
       if (!parent) {
         const resp = "⚠️ I couldn’t find details for that parent ID.";
-        await logChat({ query: req.body.queryResult.queryText, response: resp, intent, matchSource: "none", similarity: 0 });
+        await logChat({ query: req.body.queryResult.queryText || "", response: resp, intent, matchSource: "none", similarity: 0 });
         return res.json(sendResponse(resp));
       }
 
-      await Badge.create({ studentId: parentId, badgeName: "Engaged Parent", reason: "Viewed child dashboard" });
+      try {
+        await Badge.create({ studentId: parentId, badgeName: "Engaged Parent", reason: "Viewed child dashboard" });
+      } catch (e) {
+        console.warn("⚠️ Badge create failed:", e.message);
+      }
 
       const resp = `👨‍👩‍👦 *Parent Dashboard*\nParent ID: ${parentId}\nChild: ${parent.child}\n\n📊 Attendance: ${parent.attendance}\n📝 Marks: ${parent.marks}\n💰 Fees Pending: ₹${parent.feesPending}\n\n👉 Options:\n1️⃣ View Scholarship Updates\n2️⃣ View Upcoming Deadlines`;
-      await logChat({ query: req.body.queryResult.queryText, response: resp, intent, matchSource: "database", matchedQuestion: "ParentDashboard", similarity: 1 });
+      await logChat({ query: req.body.queryResult.queryText || "", response: resp, intent, matchSource: "database", matchedQuestion: "ParentDashboard", similarity: 1 });
 
       return res.json(sendResponse(resp));
     }
@@ -127,31 +137,39 @@ app.post("/webhook", async (req, res) => {
       const mentorId = params.mentorId?.[0];
       if (!mentorId) {
         const resp = "Please provide your Mentor ID (e.g., MENTOR001).";
-        await logChat({ query: req.body.queryResult.queryText, response: resp, intent, matchSource: "none", similarity: 0 });
+        await logChat({ query: req.body.queryResult.queryText || "", response: resp, intent, matchSource: "none", similarity: 0 });
         return res.json(sendResponse(resp));
       }
 
       const mentor = mentors[mentorId];
       if (!mentor) {
         const resp = "⚠️ I couldn’t find details for that mentor ID.";
-        await logChat({ query: req.body.queryResult.queryText, response: resp, intent, matchSource: "none", similarity: 0 });
+        await logChat({ query: req.body.queryResult.queryText || "", response: resp, intent, matchSource: "none", similarity: 0 });
         return res.json(sendResponse(resp));
       }
 
-      await Badge.create({ studentId: mentorId, badgeName: "Active Mentor", reason: "Reviewed mentees" });
+      try {
+        await Badge.create({ studentId: mentorId, badgeName: "Active Mentor", reason: "Reviewed mentees" });
+      } catch (e) {
+        console.warn("⚠️ Badge create failed:", e.message);
+      }
 
       const resp = `👨‍🏫 *Mentor Dashboard*\nMentor ID: ${mentorId}\n\n📋 Assigned Mentees:\n${mentor.mentees.join(", ")}\n\n👉 Options:\n1️⃣ Show Performance Summary\n2️⃣ Send Message to Mentees`;
-      await logChat({ query: req.body.queryResult.queryText, response: resp, intent, matchSource: "database", matchedQuestion: "MentorDashboard", similarity: 1 });
+      await logChat({ query: req.body.queryResult.queryText || "", response: resp, intent, matchSource: "database", matchedQuestion: "MentorDashboard", similarity: 1 });
 
       return res.json(sendResponse(resp));
     }
 
     // ------------------ Counseling ------------------
     if (intent === "CounselingIntent") {
-      await Badge.create({ studentId: "GENERIC", badgeName: "Wellbeing Seeker", reason: "Asked for counseling" });
+      try {
+        await Badge.create({ studentId: "GENERIC", badgeName: "Wellbeing Seeker", reason: "Asked for counseling" });
+      } catch (e) {
+        console.warn("⚠️ Badge create failed:", e.message);
+      }
 
       const resp = `🧠 *Counseling Support*\nI understand you’re seeking guidance.\n✔ A counselor will be notified to contact you.\n✔ Meanwhile, here are self-help resources:\n- Breathing exercises\n- Study-life balance guide\n\n👉 Options:\n1️⃣ Connect to Counselor\n2️⃣ Show Self-Help Resources`;
-      await logChat({ query: req.body.queryResult.queryText, response: resp, intent, matchSource: "database", matchedQuestion: "Counseling", similarity: 1 });
+      await logChat({ query: req.body.queryResult.queryText || "", response: resp, intent, matchSource: "database", matchedQuestion: "Counseling", similarity: 1 });
 
       return res.json(sendResponse(resp));
     }
@@ -159,33 +177,41 @@ app.post("/webhook", async (req, res) => {
     // ------------------ Distress ------------------
     if (intent === "DistressIntent") {
       const resp = `🚨 *Distress Alert*\nI sense you’re in distress. You are not alone.\n✔ A counselor has been notified to contact you immediately.\n✔ If it’s urgent, please call the helpline: 📞 1800-599-0019\n\n👉 Options:\n1️⃣ Connect to Counselor Now\n2️⃣ Get Relaxation Resources`;
-      await logChat({ query: req.body.queryResult.queryText, response: resp, intent, matchSource: "database", matchedQuestion: "Distress", similarity: 1 });
+      await logChat({ query: req.body.queryResult.queryText || "", response: resp, intent, matchSource: "database", matchedQuestion: "Distress", similarity: 1 });
       return res.json(sendResponse(resp));
     }
 
     // ------------------ Marketplace ------------------
     if (intent === "MarketplaceIntent") {
-      await Badge.create({ studentId: "GENERIC", badgeName: "Marketplace Explorer", reason: "Browsed marketplace" });
+      try {
+        await Badge.create({ studentId: "GENERIC", badgeName: "Marketplace Explorer", reason: "Browsed marketplace" });
+      } catch (e) {
+        console.warn("⚠️ Badge create failed:", e.message);
+      }
 
       const resp = `🛒 *Marketplace Listings*\nHere are some items available right now:\n- 📚 Used Textbooks (CS, Mechanical, Commerce)\n- 🧮 Calculators\n- 🛏 Hostel Essentials\n- 💻 Laptops (second-hand)\n\n👉 Options:\n1️⃣ See Latest Listings\n2️⃣ Post an Item for Sale`;
-      await logChat({ query: req.body.queryResult.queryText, response: resp, intent, matchSource: "database", matchedQuestion: "Marketplace", similarity: 1 });
+      await logChat({ query: req.body.queryResult.queryText || "", response: resp, intent, matchSource: "database", matchedQuestion: "Marketplace", similarity: 1 });
 
       return res.json(sendResponse(resp));
     }
 
     // ------------------ Mentorship ------------------
     if (intent === "MentorshipIntent") {
-      await Badge.create({ studentId: "GENERIC", badgeName: "Mentorship Seeker", reason: "Requested mentor" });
+      try {
+        await Badge.create({ studentId: "GENERIC", badgeName: "Mentorship Seeker", reason: "Requested mentor" });
+      } catch (e) {
+        console.warn("⚠️ Badge create failed:", e.message);
+      }
 
       const resp = `👨‍🏫 *Mentorship Available*\nWe have mentors in the following fields:\n- 💻 Computer Science\n- ⚙️ Mechanical Engineering\n- 📊 Commerce\n- 🤖 Artificial Intelligence / Data Science\n\n👉 Options:\n1️⃣ Connect to a Mentor\n2️⃣ View Mentor Profiles`;
-      await logChat({ query: req.body.queryResult.queryText, response: resp, intent, matchSource: "database", matchedQuestion: "Mentorship", similarity: 1 });
+      await logChat({ query: req.body.queryResult.queryText || "", response: resp, intent, matchSource: "database", matchedQuestion: "Mentorship", similarity: 1 });
 
       return res.json(sendResponse(resp));
     }
 
     // ------------------ Reminder Intent ------------------
     if (intent === "ReminderIntent") {
-      const userId = params.studentId?.[0] || params.parentId?.[0] || params.mentorId?.[0] || "GENERIC";
+      const userId = params.studentId?.[0] || params.parentId?.[0] || params.mentorId?.[0] || params.userID || "GENERIC";
       const reminders = await Reminder.find({ targetId: { $in: [userId, "GENERIC"] } })
         .sort({ createdAt: -1 })
         .limit(5)
@@ -195,7 +221,7 @@ app.post("/webhook", async (req, res) => {
         ? `📌 *Your Latest Reminders:*\n${reminders.map((r, i) => `${i + 1}. ${r.message}`).join("\n")}`
         : "📭 You have no reminders at the moment.";
 
-      await logChat({ query: req.body.queryResult.queryText, response: resp, intent, matchSource: reminders.length ? "database" : "none", matchedQuestion: "Reminders", similarity: reminders.length ? 1 : 0 });
+      await logChat({ query: req.body.queryResult.queryText || "", response: resp, intent, matchSource: reminders.length ? "database" : "none", matchedQuestion: "Reminders", similarity: reminders.length ? 1 : 0 });
       return res.json(sendResponse(resp));
     }
 
@@ -285,7 +311,7 @@ app.post("/webhook", async (req, res) => {
   } catch (err) {
     console.error("❌ Webhook error:", err.message);
     const resp = "⚠️ Something went wrong while processing your request.";
-    await logChat({ query: req.body.queryResult.queryText || "", response: resp, intent: req.body.queryResult.intent?.displayName || "unknown", matchSource: "none", similarity: 0 });
+    await logChat({ query: req.body.queryResult?.queryText || "", response: resp, intent: req.body.queryResult?.intent?.displayName || "unknown", matchSource: "none", similarity: 0 });
     return res.json(sendResponse(resp));
   }
 });
