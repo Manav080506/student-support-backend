@@ -5,7 +5,7 @@ import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
 
-import Faq from "./models/Faq.js"; // ✅ Your FAQ model
+import Faq from "./models/Faq.js"; // ✅ FAQ model
 import { getSheetData } from "./utils/sheets.js"; // ✅ Google Sheets helper
 
 dotenv.config();
@@ -49,14 +49,25 @@ app.post("/webhook", async (req, res) => {
     // ------------------ Finance ------------------
     if (intent === "FinanceIntent") {
       const studentId = params.studentId?.[0];
-      if (!studentId) return res.json(sendResponse("Please provide your Student ID (e.g., STU001)."));
 
+      // Case 1: No Student ID → General Scholarships
+      if (!studentId) {
+        return res.json(
+          sendResponse(
+            "🎓 Scholarships available right now:\n- Computer Science\n- Mechanical Engineering\n- Commerce\n\n👉 Provide your Student ID (e.g., STU001) to check personalized fees and scholarships."
+          )
+        );
+      }
+
+      // Case 2: With Student ID
       const student = students[studentId];
       if (!student) return res.json(sendResponse("⚠️ I couldn’t find details for that student ID."));
 
       return res.json(
         sendResponse(
-          `💰 *Finance Summary*\n- Student: ${student.name}\n- Pending Fees: ₹${student.feesPending}\n- Scholarships: ${student.scholarships.join(", ")}\n\n👉 Options:\n1️⃣ Show Eligible Scholarships\n2️⃣ Show Fee Deadlines`
+          `💰 *Finance Summary*\n- Student: ${student.name}\n- Pending Fees: ₹${student.feesPending}\n- Scholarships: ${student.scholarships.join(
+            ", "
+          )}\n\n👉 Options:\n1️⃣ Show Eligible Scholarships\n2️⃣ Show Fee Deadlines`
         )
       );
     }
@@ -64,7 +75,12 @@ app.post("/webhook", async (req, res) => {
     // ------------------ Parent Status ------------------
     if (intent === "ParentStatusIntent") {
       const parentId = params.parentId?.[0];
-      if (!parentId) return res.json(sendResponse("Please provide your Parent ID (e.g., PARENT001)."));
+      if (!parentId)
+        return res.json(
+          sendResponse(
+            "👨‍👩‍👦 Please provide your Parent ID (e.g., PARENT001).\n\n👉 Example queries:\n- 'Check status for PARENT001'\n- 'What is my child’s fee status?'"
+          )
+        );
 
       const parent = parents[parentId];
       if (!parent) return res.json(sendResponse("⚠️ I couldn’t find details for that parent ID."));
@@ -79,14 +95,21 @@ app.post("/webhook", async (req, res) => {
     // ------------------ Mentor Status ------------------
     if (intent === "MentorStatusIntent") {
       const mentorId = params.mentorId?.[0];
-      if (!mentorId) return res.json(sendResponse("Please provide your Mentor ID (e.g., MENTOR001)."));
+      if (!mentorId)
+        return res.json(
+          sendResponse(
+            "👨‍🏫 Please provide your Mentor ID (e.g., MENTOR001).\n\n👉 Example queries:\n- 'Details for mentor ID MENTOR001'\n- 'Show mentee progress'"
+          )
+        );
 
       const mentor = mentors[mentorId];
       if (!mentor) return res.json(sendResponse("⚠️ I couldn’t find details for that mentor ID."));
 
       return res.json(
         sendResponse(
-          `👨‍🏫 *Mentor Dashboard*\nMentor ID: ${mentorId}\n\n📋 Assigned Mentees:\n${mentor.mentees.join(", ")}\n\n👉 Options:\n1️⃣ Show Performance Summary\n2️⃣ Send Message to Mentees`
+          `👨‍🏫 *Mentor Dashboard*\nMentor ID: ${mentorId}\n\n📋 Assigned Mentees:\n${mentor.mentees.join(
+            ", "
+          )}\n\n👉 Options:\n1️⃣ Show Performance Summary\n2️⃣ Send Message to Mentees`
         )
       );
     }
@@ -120,9 +143,19 @@ app.post("/webhook", async (req, res) => {
 
     // ------------------ Mentorship ------------------
     if (intent === "MentorshipIntent") {
+      const field = params.field?.[0];
+
+      if (!field) {
+        return res.json(
+          sendResponse(
+            `👨‍🏫 *Mentorship Available*\nWe have mentors in:\n- 💻 Computer Science\n- ⚙️ Mechanical Engineering\n- 📊 Commerce\n- 🤖 Artificial Intelligence / Data Science\n\n👉 Example: 'Connect me to a mentor in Mechanical'`
+          )
+        );
+      }
+
       return res.json(
         sendResponse(
-          `👨‍🏫 *Mentorship Available*\nWe have mentors in the following fields:\n- 💻 Computer Science\n- ⚙️ Mechanical Engineering\n- 📊 Commerce\n- 🤖 Artificial Intelligence / Data Science\n\n👉 Options:\n1️⃣ Connect to a Mentor\n2️⃣ View Mentor Profiles`
+          `👨‍🏫 Connecting you to a mentor in ${field}...\n👉 Options:\n1️⃣ View Mentor Profiles\n2️⃣ Connect Now`
         )
       );
     }
@@ -137,19 +170,27 @@ app.post("/webhook", async (req, res) => {
 
       // 2️⃣ Check Google Sheets
       const sheetData = await getSheetData();
-      const sheetFaq = sheetData.find((row) => row.Question && userQuery.toLowerCase().includes(row.Question.toLowerCase()));
+      const sheetFaq = sheetData.find(
+        (row) => row.Question && userQuery.toLowerCase().includes(row.Question.toLowerCase())
+      );
       if (sheetFaq) return res.json(sendResponse(sheetFaq.Answer));
 
       // 3️⃣ Hardcoded fallback
       const hardcodedFaqs = {
-        "what is sih": "💡 *SIH (Smart India Hackathon)* is a nationwide initiative by MHRD to provide students a platform to solve pressing problems.",
-        "who are you": "🤖 I am your Student Support Assistant, here to guide you with Finance, Mentorship, Counseling, and Marketplace queries.",
+        "what is sih":
+          "💡 *SIH (Smart India Hackathon)* is a nationwide initiative by MHRD to provide students a platform to solve pressing problems.",
+        "who are you":
+          "🤖 I am your Student Support Assistant, here to guide you with Finance, Mentorship, Counseling, and Marketplace queries.",
       };
       const lowerQ = userQuery.toLowerCase();
       if (hardcodedFaqs[lowerQ]) return res.json(sendResponse(hardcodedFaqs[lowerQ]));
 
       // 4️⃣ Final fallback
-      return res.json(sendResponse("🙏 Sorry, I couldn’t find an exact answer. But I can guide you in Finance, Mentorship, Counseling, or Marketplace."));
+      return res.json(
+        sendResponse(
+          "🙏 Sorry, I couldn’t find an exact answer. But I can guide you in Finance, Mentorship, Counseling, or Marketplace."
+        )
+      );
     }
   } catch (err) {
     console.error("❌ Webhook error:", err.message);
@@ -161,9 +202,23 @@ app.post("/webhook", async (req, res) => {
 app.get("/seed-faqs", async (req, res) => {
   try {
     const faqs = [
-      { category: "General", question: "What is SIH", answer: "💡 SIH (Smart India Hackathon) is a nationwide initiative by MHRD to provide students a platform to solve pressing problems." },
-      { category: "General", question: "Who are you", answer: "🤖 I am your Student Support Assistant, here to guide you with Finance, Mentorship, Counseling, and Marketplace queries." },
-      { category: "Finance", question: "What scholarships are available", answer: "🎓 Scholarships are available for Computer Science, Mechanical, and Commerce students." },
+      {
+        category: "General",
+        question: "What is SIH",
+        answer:
+          "💡 SIH (Smart India Hackathon) is a nationwide initiative by MHRD to provide students a platform to solve pressing problems.",
+      },
+      {
+        category: "General",
+        question: "Who are you",
+        answer:
+          "🤖 I am your Student Support Assistant, here to guide you with Finance, Mentorship, Counseling, and Marketplace queries.",
+      },
+      {
+        category: "Finance",
+        question: "What scholarships are available",
+        answer: "🎓 Scholarships are available for Computer Science, Mechanical, and Commerce students.",
+      },
     ];
 
     await Faq.deleteMany({});
