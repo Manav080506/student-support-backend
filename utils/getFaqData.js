@@ -1,7 +1,7 @@
 // utils/getFaqData.js
 import fs from "fs";
 import path from "path";
-import Faq from "../models/Faq.js"; // your mongoose model
+import Faq from "../models/Faq.js"; // mongoose model
 import { fetchSimpleSheetsFaqs } from "./sheets-simple.js";
 import { fetchAdvancedSheetsFaqs } from "./sheets-advanced.js";
 
@@ -11,25 +11,33 @@ const CACHE_TTL = Number(process.env.FAQ_CACHE_TTL_MS || 1000 * 60 * 5); // 5m d
 let cache = { ts: 0, data: [] };
 
 function tokenize(text = "") {
-  return text.toLowerCase().replace(/[^\w\s]/g, " ").split(/\s+/).filter(Boolean);
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
 }
 
-// Simple scoring: token overlap + substring
+// Simple scoring: substring + token overlap
 function scoreMatch(query, qText, aText) {
   const qTokens = tokenize(query);
   if (!qTokens.length) return 0;
   const qTextLower = qText.toLowerCase();
+
   let score = 0;
   // substring boost
   if (qTextLower.includes(query.toLowerCase())) score += 2;
-  // token overlap
+
+  // token overlap with question
   const qTokensSet = new Set(tokenize(qText));
-  const matches = qTokens.filter(t => qTokensSet.has(t)).length;
+  const matches = qTokens.filter((t) => qTokensSet.has(t)).length;
   score += matches / qTokens.length;
-  // also check answer for token overlap
+
+  // token overlap with answer
   const aTokensSet = new Set(tokenize(aText));
-  const aMatches = qTokens.filter(t => aTokensSet.has(t)).length;
+  const aMatches = qTokens.filter((t) => aTokensSet.has(t)).length;
   score += (aMatches / qTokens.length) * 0.5;
+
   return score;
 }
 
@@ -38,34 +46,58 @@ async function loadAllSources(force = false) {
 
   let all = [];
 
-  // 1) local JSON
+  // 1) Local JSON
   try {
     const raw = fs.readFileSync(LOCAL_FAQ_PATH, "utf8");
     const arr = JSON.parse(raw);
-    if (Array.isArray(arr)) all = all.concat(arr.map(r => ({ ...r, source: "local" })));
+
+    if (Array.isArray(arr)) {
+      arr.forEach((r) => {
+        if (r.keywords && Array.isArray(r.keywords)) {
+          // Expand keywords → individual questions
+          r.keywords.forEach((k) => {
+            all.push({ question: k, answer: r.answer, source: "local" });
+          });
+        } else if (r.question && r.answer) {
+          all.push({ question: r.question, answer: r.answer, source: "local" });
+        }
+      });
+    }
   } catch (err) {
-    // ignore if missing
+    console.warn("⚠️ No localFaqs.json found or parse error:", err.message);
   }
 
-  // 2) mongo
+  // 2) MongoDB
   try {
     const docs = await Faq.find().lean().limit(500);
-    if (Array.isArray(docs)) all = all.concat(docs.map(d => ({ question: d.question, answer: d.answer, source: "mongo" })));
+    if (Array.isArray(docs)) {
+      all = all.concat(
+        docs.map((d) => ({
+          question: d.question,
+          answer: d.answer,
+          source: "mongo",
+        }))
+      );
+    }
   } catch (err) {
-    console.error("Error loading FAQs from mongo:", err?.message || err);
+    console.error("❌ Error loading FAQs from Mongo:", err?.message || err);
   }
 
-  // 3) simple sheets
+  // 3) Simple Sheets
   try {
     const s1 = await fetchSimpleSheetsFaqs();
-    all = all.concat(s1.map(r => ({ ...r, source: "sheets-simple" })));
-  } catch (err) { /* ignore */ }
+    all = all.concat(s1.map((r) => ({ ...r, source: "sheets-simple" })));
+  } catch (err) {
+    console.warn("⚠️ Sheets-simple failed:", err.message);
+  }
 
-  // 4) advanced sheets
+  // 4) Advanced Sheets
   try {
     const s2 = await fetchAdvancedSheetsFaqs();
-    all = all.concat(s2.map(r => ({ ...r, source: "sheets-advanced" })));
-  } catch (err) { /* ignore */ }
+    all = all.concat(s2.map((r) => ({ ...r, source: "sheets-advanced" })));
+  } catch (err) {
+    console.warn("⚠️ Sheets-advanced failed:", err.message);
+  }
 
   cache = { ts: Date.now(), data: all };
   return all;
@@ -73,7 +105,8 @@ async function loadAllSources(force = false) {
 
 /**
  * Find best FAQ match for a natural language query
- * Returns {question, answer, score, source} or null
+ * @param {string} query
+ * @returns { question, answer, score, source } or null
  */
 export async function findBestFaq(query) {
   if (!query || !query.trim()) return null;
@@ -85,14 +118,17 @@ export async function findBestFaq(query) {
     const q = item.question || "";
     const a = item.answer || "";
     const s = scoreMatch(query, q, a);
-    if (!best || s > best.score) best = { ...item, score: s };
+    if (!best || s > best.score) {
+      best = { ...item, score: s };
+    }
   }
-  // require a minimum score (tune this)
+
+  // Require a minimum score
   if (!best || best.score < 0.5) return null;
   return best;
 }
 
-// force refresh helper
+// Force refresh cache
 export async function refreshFaqCache() {
   await loadAllSources(true);
   return cache.data.length;
