@@ -1,9 +1,9 @@
+// server.js
 import express from "express";
 import bodyParser from "body-parser";
 import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
-import cron from "node-cron";
 import Sentiment from "sentiment";
 
 import Student from "./models/Student.js";
@@ -18,29 +18,15 @@ import ChatLog from "./models/ChatLog.js";
 import { findBestFaq, refreshFaqCache } from "./utils/getFaqData.js";
 
 dotenv.config();
+
 const app = express();
 app.use(bodyParser.json());
 app.use(cors());
 
-// ---------- Config ----------
-const ADMIN_KEY = process.env.ADMIN_KEY || "admin-secret";
 const PORT = process.env.PORT || 5000;
-const AUTO_SEED = process.env.AUTO_SEED === "true";
-
-// ---------- Health ----------
-app.get("/", (req, res) => {
-  res.send("✅ Student Support Backend running with FAQs + Affirmations!");
-});
-
-// ---------- DB ----------
-mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(async () => {
-    console.log("✅ MongoDB connected");
-    try { await refreshFaqCache(); } catch (err) { console.warn("FAQ cache init failed:", err.message); }
-  })
-  .catch(err => console.error("❌ MongoDB error:", err));
-
 const sentiment = new Sentiment();
+
+// --- Affirmations ---
 const affirmations = [
   "🌟 You’re stronger than you think.",
   "💡 Every small step forward is progress.",
@@ -55,108 +41,142 @@ function getAffirmation(name = null) {
   const a = affirmations[Math.floor(Math.random() * affirmations.length)];
   return name ? `Hey ${name.split(" ")[0]} — ${a}` : a;
 }
+
+// --- Helpers ---
 function sendResponse(text) {
   return { fulfillmentText: text, fulfillmentMessages: [{ text: { text: [text] } }] };
 }
-async function logChat({ query, response, intent, matchedQuestion = null, matchSource = "none", similarity = 0, affirmation = null }) {
-  try { await ChatLog.create({ query, response, intent, matchedQuestion, matchSource, similarity, affirmation }); }
-  catch (err) { console.error("❌ ChatLog save error:", err.message); }
-}
 
-// ---------- Webhook ----------
+// --- DB Connection ---
+mongoose.connect(process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/student-support", {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+}).then(async () => {
+  console.log("✅ MongoDB connected");
+  try { await refreshFaqCache(); } catch (err) { console.warn("FAQ cache init failed:", err.message); }
+}).catch(err => console.error("❌ MongoDB error:", err));
+
+// --- Webhook ---
 app.post("/webhook", async (req, res) => {
   const intent = req.body.queryResult?.intent?.displayName || "unknown";
   const params = req.body.queryResult?.parameters || {};
-  const queryText = (req.body.queryResult?.queryText || "").trim();
+  const userQueryRaw = (req.body.queryResult?.queryText || "").trim();
 
   const studentId = params.studentId || params.userID || null;
   const parentId = params.parentId || null;
   const mentorId = params.mentorId || null;
+
   const studentProfile = studentId ? await Student.findOne({ studentId }).lean() : null;
 
   try {
-    // Finance
+    // --- FinanceIntent ---
     if (intent === "FinanceIntent") {
       if (!studentId) return res.json(sendResponse("Please provide your Student ID (e.g., STU001)."));
       const student = await Student.findOne({ studentId });
-      if (!student) return res.json(sendResponse("⚠️ No student found for that ID."));
+      if (!student) return res.json(sendResponse("⚠️ No details found for that student ID."));
       try { await Badge.create({ studentId, badgeName: "Finance Explorer", reason: "Checked finance summary" }); } catch {}
-      const resp = `💰 *Finance Summary*\nStudent: ${student.name}\nPending Fees: ₹${student.feesPending}\nScholarships: ${student.scholarships.join(", ")}\n\n${getAffirmation(student.name)}`;
-      await logChat({ query: queryText, response: resp, intent, matchedQuestion: "FinanceSummary", matchSource: "db", similarity: 1 });
+      const resp = `💰 *Finance Summary*\n- Student: ${student.name}\n- Pending Fees: ₹${student.feesPending}\n- Scholarships: ${student.scholarships.join(", ")}\n\n${getAffirmation(student.name)}`;
       return res.json(sendResponse(resp));
     }
 
-    // Parent
+    // --- ParentStatusIntent ---
     if (intent === "ParentStatusIntent") {
       if (!parentId) return res.json(sendResponse("Please provide your Parent ID (e.g., PARENT001)."));
       const parent = await Parent.findOne({ parentId });
-      if (!parent) return res.json(sendResponse("⚠️ No parent found for that ID."));
+      if (!parent) return res.json(sendResponse("⚠️ No details found for that parent ID."));
+      try { await Badge.create({ studentId: parentId, badgeName: "Engaged Parent", reason: "Viewed child dashboard" }); } catch {}
       const child = await Student.findOne({ studentId: parent.studentId });
-      const resp = `👨‍👩‍👦 *Parent Dashboard*\nChild: ${child?.name || parent.studentId}\nAttendance: ${child?.attendance}\nMarks: ${child?.marks}\nFees Pending: ₹${child?.feesPending}`;
+      const resp = `👨‍👩‍👦 *Parent Dashboard*\nChild: ${child?.name || parent.studentId}\nAttendance: ${child?.attendance}\nMarks: ${child?.marks}\nFees Pending: ₹${child?.feesPending}\n\n${getAffirmation(child?.name)}`;
       return res.json(sendResponse(resp));
     }
 
-    // Mentor
+    // --- MentorStatusIntent ---
     if (intent === "MentorStatusIntent") {
       if (!mentorId) return res.json(sendResponse("Please provide your Mentor ID (e.g., MENTOR001)."));
       const mentor = await Mentor.findOne({ mentorId });
-      if (!mentor) return res.json(sendResponse("⚠️ No mentor found for that ID."));
+      if (!mentor) return res.json(sendResponse("⚠️ No details found for that mentor ID."));
+      try { await Badge.create({ studentId: mentorId, badgeName: "Active Mentor", reason: "Reviewed mentees" }); } catch {}
       const resp = `👨‍🏫 *Mentor Dashboard*\nMentees: ${mentor.mentees.join(", ")}\n\n${getAffirmation()}`;
       return res.json(sendResponse(resp));
     }
 
-    // Counseling
+    // --- CounselingIntent ---
     if (intent === "CounselingIntent") {
-      const resp = `🧠 *Counseling Support*\nA counselor will contact you soon.\n${getAffirmation(studentProfile?.name)}`;
+      try { await Badge.create({ studentId: studentProfile?.studentId || "GENERIC", badgeName: "Wellbeing Seeker", reason: "Asked for counseling" }); } catch {}
+      const resp = `🧠 *Counseling Support*\nA counselor will contact you soon.\nMeanwhile, try deep breathing.\n\n${getAffirmation(studentProfile?.name)}`;
       return res.json(sendResponse(resp));
     }
 
-    // Distress
+    // --- DistressIntent ---
     if (intent === "DistressIntent") {
-      const resp = `🚨 *Distress Alert*\nYou’re not alone. A counselor will be notified.\nCall 📞 1800-599-0019 if urgent.\n${getAffirmation(studentProfile?.name)}`;
+      const resp = `🚨 *Distress Alert*\nYou are not alone. A counselor will be notified.\nUrgent? Call 📞 1800-599-0019\n\n${getAffirmation(studentProfile?.name)}`;
       return res.json(sendResponse(resp));
     }
 
-    // Marketplace
+    // --- MarketplaceIntent ---
     if (intent === "MarketplaceIntent") {
-      const resp = `🛒 *Marketplace Listings*\n- Books\n- Calculators\n- Hostel Essentials\n- Laptops\n${getAffirmation(studentProfile?.name)}`;
+      const resp = `🛒 *Marketplace Listings*\n- 📚 Used Textbooks\n- 🧮 Calculators\n- 🛏 Hostel Essentials\n- 💻 Laptops\n\n${getAffirmation(studentProfile?.name)}`;
       return res.json(sendResponse(resp));
     }
 
-    // Mentorship
+    // --- MentorshipIntent ---
     if (intent === "MentorshipIntent") {
-      const resp = `👨‍🏫 *Mentorship Available*\nMentors in CS, Mechanical, Commerce, AI/DS.\n${getAffirmation(studentProfile?.name)}`;
+      const resp = `👨‍🏫 *Mentorship Available*\nMentors in CS, Mechanical, Commerce, AI/DS.\n\n${getAffirmation(studentProfile?.name)}`;
       return res.json(sendResponse(resp));
     }
 
-    // Reminders
+    // --- ReminderIntent ---
     if (intent === "ReminderIntent") {
       const userId = studentId || parentId || mentorId || "GENERIC";
-      const reminders = await Reminder.find({ targetId: { $in: [userId, "GENERIC"] } }).sort({ createdAt: -1 }).limit(5);
+      const reminders = await Reminder.find({ targetId: { $in: [userId, "GENERIC"] } }).sort({ createdAt: -1 }).limit(5).lean();
       const resp = reminders.length
-        ? `📌 Reminders:\n${reminders.map((r, i) => `${i + 1}. ${r.message}`).join("\n")}`
-        : "📭 No reminders right now.";
-      return res.json(sendResponse(`${resp}\n\n${getAffirmation(studentProfile?.name)}`));
+        ? `📌 Reminders:\n${reminders.map((r, i) => `${i + 1}. ${r.message}`).join("\n")}\n\n${getAffirmation(studentProfile?.name)}`
+        : `📭 No reminders.\n\n${getAffirmation(studentProfile?.name)}`;
+      return res.json(sendResponse(resp));
     }
 
-    // Default Fallback
+    // --- Default Fallback ---
     if (intent === "Default Fallback Intent") {
-      const sentimentResult = sentiment.analyze(queryText);
-      if (sentimentResult.score <= -3) return res.json(sendResponse(`😔 You seem low. Want me to connect you to a counselor?\n${getAffirmation(studentProfile?.name)}`));
-      if (sentimentResult.score >= 3) return res.json(sendResponse(`😊 Glad you’re doing well! Need study tips?\n${getAffirmation(studentProfile?.name)}`));
+      // Sentiment check
+      const sentimentResult = sentiment.analyze(userQueryRaw);
+      if (sentimentResult.score <= -3) {
+        return res.json(sendResponse(`😔 You seem low. Want me to connect you to a counselor?\nCall 📞 1800-599-0019\n\n${getAffirmation(studentProfile?.name)}`));
+      }
+      if (sentimentResult.score >= 3) {
+        return res.json(sendResponse(`😊 Glad you’re doing well! Need study tips?\n\n${getAffirmation(studentProfile?.name)}`));
+      }
 
-      const best = await findBestFaq(queryText);
-      if (best) return res.json(sendResponse(`${best.answer}\n\n${getAffirmation(studentProfile?.name)}`));
+      // FAQ lookup
+      const best = await findBestFaq(userQueryRaw);
+      if (best) {
+        return res.json(sendResponse(`${best.answer}\n\n${getAffirmation(studentProfile?.name)}`));
+      }
 
-      return res.json(sendResponse(`🙏 Sorry, I couldn’t find an exact answer. I can help in Finance, Mentorship, Counseling, or Marketplace.\n${getAffirmation(studentProfile?.name)}`));
+      // --- Synonym Safety Net ---
+      const lowerQ = userQueryRaw.toLowerCase();
+      if (["fees", "fee", "scholarship", "finance", "dues"].some(w => lowerQ.includes(w))) {
+        return res.json(sendResponse("💰 It looks like you want finance help. Please provide your Student ID (e.g., STU001)."));
+      }
+      if (["mentor", "mentorship", "senior", "guide", "career"].some(w => lowerQ.includes(w))) {
+        return res.json(sendResponse("👨‍🏫 It looks like you want a mentor. We have mentors in CS, Mechanical, Commerce, AI/DS."));
+      }
+      if (["sell", "buy", "marketplace", "books", "calculator", "essentials"].some(w => lowerQ.includes(w))) {
+        return res.json(sendResponse("🛒 Looking for marketplace items? You can buy/sell books, calculators, and hostel essentials here."));
+      }
+      if (["counselor", "counseling", "anxious", "depressed", "help"].some(w => lowerQ.includes(w))) {
+        return res.json(sendResponse("🧠 It seems you may need counseling support. A counselor can be notified to assist you."));
+      }
+
+      // Final fallback
+      return res.json(sendResponse(`🙏 Sorry, I couldn’t find an exact answer. I can help in Finance, Mentorship, Counseling, or Marketplace.\n\n${getAffirmation(studentProfile?.name)}`));
     }
 
     return res.json(sendResponse(`I can guide you in Finance, Mentorship, Counseling, or Marketplace. ${getAffirmation(studentProfile?.name)}`));
   } catch (err) {
-    console.error("❌ Webhook error:", err.message);
+    console.error("❌ Webhook error:", err.message || err);
     return res.json(sendResponse(`⚠️ Something went wrong. ${getAffirmation()}`));
   }
 });
 
-// ---------- Start ----------
+// --- Start ---
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
