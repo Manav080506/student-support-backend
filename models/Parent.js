@@ -3,10 +3,10 @@ import mongoose from "mongoose";
 
 const parentSchema = new mongoose.Schema({
   parentId: { type: String, required: true, unique: true },
-  name: { type: String, required: true },
-  relation: String, // e.g., Father, Mother
-  studentId: { type: String, required: true } // link to Student
+  name: { type: String, required: true },        // Parent’s name
+  relation: { type: String, default: "Parent" }, // Father, Mother, etc.
+  studentId: { type: String, required: true }    // Link to Student.studentId
 });
 
-const Parent = mongoose.model("Parent", parentSchema);
+const Parent = mongoose.models.Parent || mongoose.model("Parent", parentSchema);
 export default Parent;
