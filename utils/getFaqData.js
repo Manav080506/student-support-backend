@@ -9,7 +9,7 @@ import Sentiment from "sentiment";
 import Student from "./models/Student.js";
 import Parent from "./models/Parent.js";
 import Mentor from "./models/Mentor.js";
-import Faq from "./models/Faq.js";
+import Faq from "../models/Faq.js"; 
 import Badge from "./models/Badge.js";
 import BadgeMeta from "./models/BadgeMeta.js";
 import Reminder from "./models/Reminder.js";
