@@ -6,13 +6,12 @@ dotenv.config();
 let sheetCache = []; // cached rows
 let connected = false;
 
+/**
+ * Fetch FAQs from a simple Google Sheet
+ */
 export async function fetchSimpleSheetsFaqs() {
-  if (
-    !process.env.GOOGLE_SHEET_ID ||
-    !process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ||
-    !process.env.GOOGLE_PRIVATE_KEY
-  ) {
-    console.warn("⚠️ Google Sheets env not fully set — skipping sheet fetch.");
+  if (!process.env.GOOGLE_SHEET_ID || !process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+    console.warn("⚠️ Google Sheets env not fully set — skipping simple sheets fetch.");
     return [];
   }
   try {
@@ -24,22 +23,16 @@ export async function fetchSimpleSheetsFaqs() {
     await doc.loadInfo();
     const sheet = doc.sheetsByIndex[0]; // first sheet
     const rows = await sheet.getRows();
-    sheetCache = rows.map((r) => ({
+    sheetCache = rows.map(r => ({
       question: r.Question || r.question || "",
       answer: r.Answer || r.answer || "",
-      category: r.Category || r.category || "General",
+      category: r.Category || r.category || "General"
     }));
     connected = true;
-    console.log(
-      "✅ Simple Google Sheet connected:",
-      doc.title,
-      "|",
-      sheetCache.length,
-      "rows"
-    );
+    console.log("✅ Simple Google Sheet connected:", doc.title, "|", sheetCache.length, "rows");
     return sheetCache;
   } catch (err) {
-    console.error("❌ Google Sheets init error:", err.message);
+    console.error("❌ Google Sheets simple fetch error:", err.message);
     connected = false;
     return [];
   }
