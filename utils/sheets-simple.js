@@ -1,48 +1,47 @@
 // utils/sheets-simple.js
-import { GoogleSpreadsheet } from "google-spreadsheet";
-import dotenv from "dotenv";
-dotenv.config();
+import fetch from "node-fetch";
 
-let sheetCache = []; // cached rows
-let connected = false;
+const SHEET_ID = process.env.GOOGLE_SHEET_ID;
+const API_KEY = process.env.GOOGLE_API_KEY;
 
 /**
- * Fetch FAQs from a simple Google Sheet
+ * Fetch FAQs from the Google Sheet using API key
+ * Expected format: first row = headers (Question, Answer, Category)
  */
-export async function fetchSimpleSheetsFaqs() {
-  if (!process.env.GOOGLE_SHEET_ID || !process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
-    console.warn("⚠️ Google Sheets env not fully set — skipping simple sheets fetch.");
+export async function fetchSimpleSheetsFaqs(range = "Sheet1!A:C") {
+  if (!SHEET_ID || !API_KEY) {
+    console.warn("⚠️ Missing SHEET_ID or API_KEY in environment");
     return [];
   }
+
   try {
-    const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID);
-    await doc.useServiceAccountAuth({
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
-    });
-    await doc.loadInfo();
-    const sheet = doc.sheetsByIndex[0]; // first sheet
-    const rows = await sheet.getRows();
-    sheetCache = rows.map(r => ({
-      question: r.Question || r.question || "",
-      answer: r.Answer || r.answer || "",
-      category: r.Category || r.category || "General"
-    }));
-    connected = true;
-    console.log("✅ Simple Google Sheet connected:", doc.title, "|", sheetCache.length, "rows");
-    return sheetCache;
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}?key=${API_KEY}`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (!data.values || !data.values.length) {
+      console.warn("⚠️ No data found in Google Sheet");
+      return [];
+    }
+
+    // First row = headers
+    const headers = data.values[0];
+    const rows = data.values.slice(1);
+
+    return rows.map(row => {
+      let obj = {};
+      headers.forEach((h, i) => {
+        obj[h] = row[i] || "";
+      });
+      return {
+        question: obj.Question || obj.question || "",
+        answer: obj.Answer || obj.answer || "",
+        category: obj.Category || obj.category || "General"
+      };
+    }).filter(r => r.question && r.answer);
+
   } catch (err) {
-    console.error("❌ Google Sheets simple fetch error:", err.message);
-    connected = false;
+    console.error("❌ Google Sheets fetch error:", err.message);
     return [];
   }
-}
-
-export function getCachedSheetFaqs() {
-  return sheetCache || [];
-}
-
-// optional manual refresh
-export async function refreshSheetCache() {
-  return await fetchSimpleSheetsFaqs();
 }
