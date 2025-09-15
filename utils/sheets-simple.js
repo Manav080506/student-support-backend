@@ -4,6 +4,10 @@ import { GoogleSpreadsheet } from "google-spreadsheet";
 let sheetCache = [];
 let connected = false;
 
+/**
+ * Fetch FAQs from a Google Sheet using service account.
+ * Returns array of {question, answer, category}
+ */
 export async function fetchSimpleSheetsFaqs() {
   if (
     !process.env.GOOGLE_SHEET_ID ||
