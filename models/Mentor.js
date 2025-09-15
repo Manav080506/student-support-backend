@@ -3,10 +3,10 @@ import mongoose from "mongoose";
 
 const mentorSchema = new mongoose.Schema({
   mentorId: { type: String, required: true, unique: true },
-  name: { type: String, required: true },
-  field: { type: String, required: true },
-  mentees: [String] // list of Student IDs
+  name: { type: String, required: true },        // Mentor’s name
+  field: { type: String, required: true },       // e.g., Computer Science, Mechanical
+  mentees: { type: [String], default: [] }       // Array of Student IDs
 });
 
-const Mentor = mongoose.model("Mentor", mentorSchema);
+const Mentor = mongoose.models.Mentor || mongoose.model("Mentor", mentorSchema);
 export default Mentor;
