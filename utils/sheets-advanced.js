@@ -1,9 +1,13 @@
 // utils/sheets-advanced.js
 import fetch from "node-fetch";
 
+/**
+ * Fetch FAQs from Google Sheets using API key.
+ * Returns array of {question, answer, category}
+ */
 export async function fetchAdvancedSheetsFaqs() {
   if (!process.env.GOOGLE_SHEET_ID || !process.env.GOOGLE_API_KEY) {
-    console.warn("⚠️ No GOOGLE_SHEET_ID or GOOGLE_API_KEY set — skipping advanced sheets.");
+    console.warn("⚠️ Missing GOOGLE_SHEET_ID or GOOGLE_API_KEY — skipping advanced sheets.");
     return [];
   }
 
@@ -13,7 +17,6 @@ export async function fetchAdvancedSheetsFaqs() {
     if (!resp.ok) throw new Error(`Google Sheets API error: ${resp.status}`);
     const data = await resp.json();
 
-    // data.values is an array of rows
     const rows = data.values || [];
     return rows.slice(1).map((r) => ({
       question: r[0] || "",
