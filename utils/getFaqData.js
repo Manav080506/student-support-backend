@@ -1,7 +1,7 @@
 // utils/getFaqData.js
 import fs from "fs";
 import path from "path";
-import Faq from "../models/Faq.js";   // ✅ fixed import path
+import Faq from "../models/Faq.js";
 import { fetchSimpleSheetsFaqs } from "./sheets-simple.js";
 import { fetchAdvancedSheetsFaqs } from "./sheets-advanced.js";
 
@@ -18,22 +18,18 @@ function tokenize(text = "") {
     .filter(Boolean);
 }
 
-// Simple scoring: token overlap + substring
 function scoreMatch(query, qText, aText) {
   const qTokens = tokenize(query);
   if (!qTokens.length) return 0;
   const qTextLower = qText.toLowerCase();
   let score = 0;
 
-  // substring boost
   if (qTextLower.includes(query.toLowerCase())) score += 2;
 
-  // token overlap
   const qTokensSet = new Set(tokenize(qText));
   const matches = qTokens.filter((t) => qTokensSet.has(t)).length;
   score += matches / qTokens.length;
 
-  // also check answer for token overlap
   const aTokensSet = new Set(tokenize(aText));
   const aMatches = qTokens.filter((t) => aTokensSet.has(t)).length;
   score += (aMatches / qTokens.length) * 0.5;
@@ -42,8 +38,9 @@ function scoreMatch(query, qText, aText) {
 }
 
 async function loadAllSources(force = false) {
-  if (!force && Date.now() - cache.ts < CACHE_TTL && cache.data.length)
+  if (!force && Date.now() - cache.ts < CACHE_TTL && cache.data.length) {
     return cache.data;
+  }
 
   let all = [];
 
@@ -53,8 +50,8 @@ async function loadAllSources(force = false) {
     const arr = JSON.parse(raw);
     if (Array.isArray(arr))
       all = all.concat(arr.map((r) => ({ ...r, source: "local" })));
-  } catch (err) {
-    // ignore if missing
+  } catch {
+    console.warn("⚠️ No localFaqs.json found, skipping...");
   }
 
   // 2) mongo
@@ -69,7 +66,7 @@ async function loadAllSources(force = false) {
         }))
       );
   } catch (err) {
-    console.error("Error loading FAQs from mongo:", err?.message || err);
+    console.error("❌ Error loading FAQs from mongo:", err?.message || err);
   }
 
   // 3) simple sheets
@@ -77,7 +74,7 @@ async function loadAllSources(force = false) {
     const s1 = await fetchSimpleSheetsFaqs();
     all = all.concat(s1.map((r) => ({ ...r, source: "sheets-simple" })));
   } catch (err) {
-    /* ignore */
+    console.error("❌ fetchSimpleSheetsFaqs failed:", err.message);
   }
 
   // 4) advanced sheets
@@ -85,17 +82,13 @@ async function loadAllSources(force = false) {
     const s2 = await fetchAdvancedSheetsFaqs();
     all = all.concat(s2.map((r) => ({ ...r, source: "sheets-advanced" })));
   } catch (err) {
-    /* ignore */
+    console.error("❌ fetchAdvancedSheetsFaqs failed:", err.message);
   }
 
   cache = { ts: Date.now(), data: all };
   return all;
 }
 
-/**
- * Find best FAQ match for a natural language query
- * Returns {question, answer, score, source} or null
- */
 export async function findBestFaq(query) {
   if (!query || !query.trim()) return null;
   const all = await loadAllSources();
@@ -108,12 +101,11 @@ export async function findBestFaq(query) {
     const s = scoreMatch(query, q, a);
     if (!best || s > best.score) best = { ...item, score: s };
   }
-  // require a minimum score (tune this)
+
   if (!best || best.score < 0.5) return null;
   return best;
 }
 
-// force refresh helper
 export async function refreshFaqCache() {
   await loadAllSources(true);
   return cache.data.length;
