@@ -17,7 +17,7 @@ import Reminder from "./models/Reminder.js";
 import ChatLog from "./models/ChatLog.js";
 
 import { findBestFaq, refreshFaqCache } from "./utils/getFaqData.js";
-import { findKeywordFaq } from "./utils/getKeywordFaq.js"; // ✅ new
+import { findKeywordFaq, loadKeywordFaqs } from "./utils/getKeywordFaq.js";
 
 dotenv.config();
 const app = express();
@@ -28,11 +28,10 @@ app.use(cors());
 const ADMIN_KEY = process.env.ADMIN_KEY || "admin-secret";
 const AUTO_SEED = process.env.AUTO_SEED === "true";
 const PORT = process.env.PORT || 5000;
-const WEBHOOK_TIMEOUT_MS = Number(process.env.WEBHOOK_TIMEOUT_MS || 2500); // ms
 
-// ---------- Basic health ----------
+// ---------- Health ----------
 app.get("/", (req, res) => {
-  res.send("✅ Student Support Backend is running — now with keyword FAQs!");
+  res.send("✅ Student Support Backend is running — with Keyword FAQs, DB, and Sheets integration.");
 });
 
 // ---------- MongoDB ----------
@@ -45,17 +44,11 @@ mongoose
     console.log("✅ MongoDB connected");
     try {
       await refreshFaqCache();
+      await loadKeywordFaqs();
     } catch (e) {
-      console.warn("⚠️ refreshFaqCache failed:", e?.message || e);
+      console.warn("⚠️ Cache init failed:", e.message);
     }
-    if (AUTO_SEED) {
-      try {
-        await runAutoSeed();
-        console.log("🔁 Auto-seed complete.");
-      } catch (e) {
-        console.warn("⚠️ Auto-seed failed:", e?.message || e);
-      }
-    }
+    if (AUTO_SEED) await runAutoSeed();
   })
   .catch((err) => console.error("❌ MongoDB connection error:", err));
 
@@ -71,60 +64,22 @@ const affirmations = [
   "🔥 Keep going, you’re doing amazing.",
   "☀️ Even the darkest night ends with sunrise.",
   "🎯 Stay focused, your dreams are valid.",
-  "❤️ Remember, asking for help is a sign of strength.",
+  "❤️ Asking for help is a sign of strength.",
 ];
 function getAffirmation(name = null) {
   const a = affirmations[Math.floor(Math.random() * affirmations.length)];
-  return name ? `Hey ${String(name).split(" ")[0]} — ${a}` : a;
+  return name ? `Hey ${name.split(" ")[0]} — ${a}` : a;
 }
 
 // ---------- Helpers ----------
 function sendResponse(text) {
   return { fulfillmentText: text, fulfillmentMessages: [{ text: { text: [text] } }] };
 }
-async function logChat({
-  query,
-  response,
-  intent,
-  matchedQuestion = null,
-  matchSource = "none",
-  similarity = 0,
-  affirmation = null,
-}) {
+async function logChat({ query, response, intent, matchedQuestion = null, matchSource = "none", similarity = 0, affirmation = null }) {
   try {
-    await ChatLog.create({
-      query,
-      response,
-      intent,
-      matchedQuestion,
-      matchSource,
-      similarity,
-      affirmation,
-      createdAt: new Date(),
-    });
+    await ChatLog.create({ query, response, intent, matchedQuestion, matchSource, similarity, affirmation, createdAt: new Date() });
   } catch (err) {
-    console.error("❌ ChatLog save error:", err?.message || err);
-  }
-}
-
-// timeout wrapper
-async function withTimeout(promiseFn, ms = WEBHOOK_TIMEOUT_MS, fallbackText = null) {
-  let timedOut = false;
-  const timeout = new Promise((resolve) => {
-    const t = setTimeout(() => {
-      timedOut = true;
-      resolve(fallbackText ?? `⚠️ Sorry — response timed out after ${ms}ms.`);
-    }, ms);
-    timeout.clear = () => clearTimeout(t);
-  });
-
-  try {
-    const result = await Promise.race([promiseFn(), timeout]);
-    if (timeout.clear) timeout.clear();
-    return result;
-  } catch {
-    if (timeout.clear) timeout.clear();
-    return fallbackText ?? `⚠️ Error while processing request.`;
+    console.error("❌ ChatLog save error:", err.message);
   }
 }
 
@@ -136,25 +91,21 @@ async function runAutoSeed() {
       { studentId: "STU002", name: "Daksh Beniwal", feesPending: 3000, scholarships: ["Mechanical Engineering"], marks: 74, attendance: 79 },
       { studentId: "STU003", name: "Disha Binani", feesPending: 0, scholarships: ["Commerce"], marks: 91, attendance: 95 },
     ]);
-    console.log("✅ Seeded students");
   }
   if (!(await Parent.countDocuments())) {
     await Parent.create({ parentId: "PARENT001", name: "Mr. Runthala", relation: "Father", studentId: "STU001" });
-    console.log("✅ Seeded parents");
   }
   if (!(await Mentor.countDocuments())) {
     await Mentor.create({ mentorId: "MENTOR001", name: "Prof. Sharma", field: "Computer Science", mentees: ["STU001", "STU002"] });
-    console.log("✅ Seeded mentors");
   }
   if (!(await Faq.countDocuments())) {
     await Faq.insertMany([
       { category: "Finance", question: "What scholarships are available", answer: "🎓 Scholarships: merit and need-based. Check dashboard for eligibility." },
       { category: "Finance", question: "When is my fee due", answer: "Fee deadlines are posted on the finance dashboard. Contact finance for specifics." },
       { category: "Counseling", question: "I feel anxious", answer: "🧠 Try 4-4-4 breathing and reach out to a counselor if it persists." },
-      { category: "Distress", question: "I feel depressed", answer: "🚨 If immediate danger, call local emergency services. Helpline: 1800-599-0019." },
-      { category: "General", question: "Who are you", answer: "🤖 I am the Student Support Assistant — here to help." },
+      { category: "Distress", question: "I feel depressed", answer: "🚨 If in immediate danger, call 📞 1800-599-0019 right away." },
+      { category: "General", question: "Who are you", answer: "🤖 I am the Student Support Assistant — here to help with finance, mentorship, counseling, and more." },
     ]);
-    console.log("✅ Seeded FAQs");
   }
   if (!(await BadgeMeta.countDocuments())) {
     await BadgeMeta.insertMany([
@@ -165,57 +116,119 @@ async function runAutoSeed() {
       { badgeName: "Wellbeing Seeker", description: "Asked for counseling", icon: "🧠" },
       { badgeName: "Consistency Badge", description: "Daily engagement", icon: "🎖️" },
     ]);
-    console.log("✅ Seeded badge meta");
   }
 }
 
 // ---------- Webhook ----------
 app.post("/webhook", async (req, res) => {
+  const intent = req.body.queryResult?.intent?.displayName || "unknown";
+  const params = req.body.queryResult?.parameters || {};
+  const userQueryRaw = (req.body.queryResult?.queryText || "").trim();
+
+  const studentIdParam = params.studentId || params.userID || null;
+  const parentIdParam = params.parentId || null;
+  const mentorIdParam = params.mentorId || null;
+
+  const studentProfile = studentIdParam ? await Student.findOne({ studentId: studentIdParam }).lean() : null;
+
   try {
-    const intent = req.body.queryResult?.intent?.displayName || "unknown";
-    const params = req.body.queryResult?.parameters || {};
-    const userQueryRaw = (req.body.queryResult?.queryText || "").trim();
+    // --- FinanceIntent ---
+    if (intent === "FinanceIntent") {
+      if (!studentIdParam) return res.json(sendResponse("Please provide your Student ID (e.g., STU001)."));
+      const student = await Student.findOne({ studentId: studentIdParam });
+      if (!student) return res.json(sendResponse("⚠️ I couldn’t find details for that student ID."));
+      await Badge.create({ studentId: studentIdParam, badgeName: "Finance Explorer", reason: "Checked finance summary" }).catch(() => {});
+      const resp = `💰 *Finance Summary*\n- Student: ${student.name}\n- Pending Fees: ₹${student.feesPending}\n- Scholarships: ${student.scholarships.join(", ")}\n\n${getAffirmation(student.name)}`;
+      await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "database" });
+      return res.json(sendResponse(resp));
+    }
 
-    const studentIdParam = params.studentId || params.userID || null;
-    const parentIdParam = params.parentId || null;
-    const mentorIdParam = params.mentorId || null;
-    const studentProfile = studentIdParam ? await Student.findOne({ studentId: studentIdParam }).lean() : null;
+    // --- ParentStatusIntent ---
+    if (intent === "ParentStatusIntent") {
+      if (!parentIdParam) return res.json(sendResponse("Please provide your Parent ID (e.g., PARENT001)."));
+      const parent = await Parent.findOne({ parentId: parentIdParam });
+      if (!parent) return res.json(sendResponse("⚠️ I couldn’t find details for that parent ID."));
+      const child = await Student.findOne({ studentId: parent.studentId });
+      await Badge.create({ studentId: parentIdParam, badgeName: "Engaged Parent", reason: "Viewed child dashboard" }).catch(() => {});
+      const resp = `👨‍👩‍👦 *Parent Dashboard*\nChild: ${child?.name || parent.studentId}\nAttendance: ${child?.attendance}\nMarks: ${child?.marks}\nFees Pending: ₹${child?.feesPending}`;
+      await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "database" });
+      return res.json(sendResponse(resp));
+    }
 
-    // Default Fallback Intent with new order
+    // --- MentorStatusIntent ---
+    if (intent === "MentorStatusIntent") {
+      if (!mentorIdParam) return res.json(sendResponse("Please provide your Mentor ID (e.g., MENTOR001)."));
+      const mentor = await Mentor.findOne({ mentorId: mentorIdParam });
+      if (!mentor) return res.json(sendResponse("⚠️ I couldn’t find details for that mentor ID."));
+      await Badge.create({ studentId: mentorIdParam, badgeName: "Active Mentor", reason: "Reviewed mentees" }).catch(() => {});
+      const resp = `👨‍🏫 *Mentor Dashboard*\nMentees: ${mentor.mentees.join(", ")}\n\n${getAffirmation()}`;
+      await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "database" });
+      return res.json(sendResponse(resp));
+    }
+
+    // --- CounselingIntent ---
+    if (intent === "CounselingIntent") {
+      await Badge.create({ studentId: studentProfile?.studentId || "GENERIC", badgeName: "Wellbeing Seeker", reason: "Asked for counseling" }).catch(() => {});
+      const resp = `🧠 *Counseling Support*\nA counselor will contact you soon.\nMeanwhile, try deep breathing.\n\n${getAffirmation(studentProfile?.name)}`;
+      await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "hardcoded" });
+      return res.json(sendResponse(resp));
+    }
+
+    // --- DistressIntent ---
+    if (intent === "DistressIntent") {
+      const resp = `🚨 *Distress Alert*\nYou are not alone. A counselor will be notified.\nUrgent? Call 📞 1800-599-0019\n\n${getAffirmation(studentProfile?.name)}`;
+      await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "rule" });
+      return res.json(sendResponse(resp));
+    }
+
+    // --- MarketplaceIntent ---
+    if (intent === "MarketplaceIntent") {
+      const resp = `🛒 *Marketplace Listings*\n- 📚 Used Textbooks\n- 🧮 Calculators\n- 🛏 Hostel Essentials\n- 💻 Laptops\n\n${getAffirmation(studentProfile?.name)}`;
+      await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "hardcoded" });
+      return res.json(sendResponse(resp));
+    }
+
+    // --- MentorshipIntent ---
+    if (intent === "MentorshipIntent") {
+      const resp = `👨‍🏫 *Mentorship Available*\nMentors in CS, Mechanical, Commerce, AI/DS.\n\n${getAffirmation(studentProfile?.name)}`;
+      await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "hardcoded" });
+      return res.json(sendResponse(resp));
+    }
+
+    // --- ReminderIntent ---
+    if (intent === "ReminderIntent") {
+      const userId = studentIdParam || parentIdParam || mentorIdParam || "GENERIC";
+      const reminders = await Reminder.find({ targetId: { $in: [userId, "GENERIC"] } }).sort({ createdAt: -1 }).limit(5).lean();
+      const resp = reminders.length
+        ? `📌 Reminders:\n${reminders.map((r, i) => `${i + 1}. ${r.message}`).join("\n")}\n\n${getAffirmation(studentProfile?.name)}`
+        : `📭 No reminders.\n\n${getAffirmation(studentProfile?.name)}`;
+      await logChat({ query: userQueryRaw, response: resp, intent, matchSource: reminders.length ? "database" : "none" });
+      return res.json(sendResponse(resp));
+    }
+
+    // --- Default Fallback ---
     if (intent === "Default Fallback Intent") {
-      // 1) Sentiment
-      try {
-        const sres = sentiment.analyze(userQueryRaw);
-        if (sres.score <= -3) {
-          const resp = `😔 You seem low. Want me to connect you to a counselor?\nCall 📞 1800-599-0019\n\n${getAffirmation(studentProfile?.name)}`;
-          await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "sentiment", matchedQuestion: "sentiment_negative", similarity: Math.abs(sres.score) });
-          return res.json(sendResponse(resp));
-        }
-        if (sres.score >= 3) {
-          const resp = `😊 Glad you’re doing well! Need study tips?\n\n${getAffirmation(studentProfile?.name)}`;
-          await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "sentiment", matchedQuestion: "sentiment_positive", similarity: sres.score });
-          return res.json(sendResponse(resp));
-        }
-      } catch (err) {
-        console.warn("⚠️ Sentiment failed:", err?.message || err);
+      const sentimentResult = sentiment.analyze(userQueryRaw);
+      if (sentimentResult.score <= -3) {
+        const resp = `😔 You seem low. Want me to connect you to a counselor?\nCall 📞 1800-599-0019\n\n${getAffirmation(studentProfile?.name)}`;
+        await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "sentiment" });
+        return res.json(sendResponse(resp));
       }
-
-      // 2) Keyword FAQs
-      const keywordMatch = await findKeywordFaq(userQueryRaw);
-      if (keywordMatch) {
-        const resp = `${keywordMatch.answer}\n\n${getAffirmation(studentProfile?.name)}`;
-        await logChat({
-          query: userQueryRaw,
-          response: resp,
-          intent,
-          matchedQuestion: keywordMatch.matched?.join(", ") || "keyword",
-          matchSource: keywordMatch.source,
-          similarity: 1,
-        });
+      if (sentimentResult.score >= 3) {
+        const resp = `😊 Glad you’re doing well! Need study tips?\n\n${getAffirmation(studentProfile?.name)}`;
+        await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "sentiment" });
         return res.json(sendResponse(resp));
       }
 
-      // 3) Fuzzy FAQ
+      // 1) keyword match
+      const keywordFaq = await findKeywordFaq(userQueryRaw);
+      if (keywordFaq) {
+        const resp = `${keywordFaq.answer}\n\n${getAffirmation(studentProfile?.name)}`;
+        await logChat({ query: userQueryRaw, response: resp, intent, matchedQuestion: keywordFaq.matched, matchSource: keywordFaq.source });
+        return res.json(sendResponse(resp));
+      }
+
+      // 2) smart DB/Sheets FAQ
       const best = await findBestFaq(userQueryRaw);
       if (best) {
         const resp = `${best.answer}\n\n${getAffirmation(studentProfile?.name)}`;
@@ -223,29 +236,15 @@ app.post("/webhook", async (req, res) => {
         return res.json(sendResponse(resp));
       }
 
-      // 4) Synonym checks
-      const lower = userQueryRaw.toLowerCase();
-      if (["fees", "fee", "scholarship", "finance", "dues", "pending"].some((w) => lower.includes(w))) {
-        const r = `💰 It looks like you want finance help. Please provide your Student ID (e.g., STU001).`;
-        await logChat({ query: userQueryRaw, response: r, intent, matchSource: "synonym", matchedQuestion: "finance_synonym", similarity: 1 });
-        return res.json(sendResponse(r));
-      }
-      if (["suicide", "suicidal", "kill myself", "end my life"].some((w) => lower.includes(w))) {
-        const r = `🚨 I'm worried you're mentioning self-harm. If you are in immediate danger call local emergency services. Helpline: 📞 1800-599-0019.`;
-        await logChat({ query: userQueryRaw, response: r, intent, matchSource: "synonym", matchedQuestion: "selfharm_synonym", similarity: 1 });
-        return res.json(sendResponse(r));
-      }
-
-      // 5) Final fallback
-      const fallbackResp = `🙏 Sorry, I couldn’t find an exact answer. But I can help in Finance, Mentorship, Counseling, or Marketplace.\n\n${getAffirmation(studentProfile?.name)}`;
-      await logChat({ query: userQueryRaw, response: fallbackResp, intent, matchSource: "none", similarity: 0 });
-      return res.json(sendResponse(fallbackResp));
+      // 3) final fallback
+      const fallback = `🙏 Sorry, I couldn’t find an exact answer. I can help in Finance, Mentorship, Counseling, or Marketplace.\n\n${getAffirmation(studentProfile?.name)}`;
+      await logChat({ query: userQueryRaw, response: fallback, intent, matchSource: "none" });
+      return res.json(sendResponse(fallback));
     }
 
-    // Other intents (Finance, Parent, Mentor, etc.) — keep your existing code here
     return res.json(sendResponse(`I can guide you in Finance, Mentorship, Counseling, or Marketplace. ${getAffirmation(studentProfile?.name)}`));
   } catch (err) {
-    console.error("❌ Webhook error:", err.message || err);
+    console.error("❌ Webhook error:", err.message);
     return res.json(sendResponse(`⚠️ Something went wrong. ${getAffirmation()}`));
   }
 });
