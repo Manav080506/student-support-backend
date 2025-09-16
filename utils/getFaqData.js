@@ -6,7 +6,8 @@ import { fetchSimpleSheetsFaqs } from "./sheets-simple.js";
 import { fetchAdvancedSheetsFaqs } from "./sheets-advanced.js";
 
 const LOCAL_FAQ_PATH = path.join(process.cwd(), "utils", "localFaqs.json");
-const CACHE_TTL = Number(process.env.FAQ_CACHE_TTL_MS || 1000 * 60 * 5); // 5 min default
+const CACHE_FILE = path.join(process.cwd(), "data", "faqs-cache.json");
+const CACHE_TTL = Number(process.env.FAQ_CACHE_TTL_MS || 1000 * 60 * 5); // 5 min
 
 let cache = { ts: 0, data: [] };
 
@@ -21,6 +22,7 @@ function tokenize(text = "") {
 function scoreMatch(query, qText, aText) {
   const qTokens = tokenize(query);
   if (!qTokens.length) return 0;
+
   const qTextLower = qText.toLowerCase();
   let score = 0;
 
@@ -44,13 +46,26 @@ async function loadAllSources(force = false) {
 
   let all = [];
 
+  // 0) cached JSON file
+  try {
+    if (fs.existsSync(CACHE_FILE)) {
+      const raw = fs.readFileSync(CACHE_FILE, "utf8");
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        all = all.concat(arr.map((r) => ({ ...r, source: "cache-file" })));
+        console.log(`📂 Loaded ${arr.length} FAQs from cache file`);
+      }
+    }
+  } catch (err) {
+    console.warn("⚠️ Could not read cache file:", err.message);
+  }
+
   // 1) local JSON
   try {
     const raw = fs.readFileSync(LOCAL_FAQ_PATH, "utf8");
     const arr = JSON.parse(raw);
-    if (Array.isArray(arr)) {
+    if (Array.isArray(arr))
       all = all.concat(arr.map((r) => ({ ...r, source: "local" })));
-    }
   } catch {
     console.warn("⚠️ No localFaqs.json found, skipping...");
   }
@@ -58,7 +73,7 @@ async function loadAllSources(force = false) {
   // 2) mongo
   try {
     const docs = await Faq.find().lean().limit(500);
-    if (Array.isArray(docs)) {
+    if (Array.isArray(docs))
       all = all.concat(
         docs.map((d) => ({
           question: d.question,
@@ -66,9 +81,8 @@ async function loadAllSources(force = false) {
           source: "mongo",
         }))
       );
-    }
   } catch (err) {
-    console.error("❌ Error loading FAQs from mongo:", err?.message || err);
+    console.error("❌ Error loading FAQs from mongo:", err.message);
   }
 
   // 3) simple sheets
@@ -105,18 +119,18 @@ export async function findBestFaq(query) {
   }
 
   if (!best || best.score < 0.5) return null;
-
-  // If best answer came from local JSON, append offline flag
-  if (best.source === "local") {
-    best.answer = `${best.answer}\n\n⚠️ *Offline mode active — answer from local cache*`;
-  }
-
   return best;
 }
 
 export async function refreshFaqCache() {
-  await loadAllSources(true);
-  return cache.data.length;
+  const all = await loadAllSources(true);
+  try {
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(all, null, 2), "utf8");
+    console.log(`💾 FAQ cache refreshed: ${all.length} entries written to ${CACHE_FILE}`);
+  } catch (err) {
+    console.warn("⚠️ Failed to write FAQ cache:", err.message);
+  }
+  return all.length;
 }
 
 export default { findBestFaq, refreshFaqCache };
