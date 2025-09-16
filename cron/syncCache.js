@@ -8,52 +8,46 @@ import { fetchAdvancedSheetsFaqs } from "../utils/sheets-advanced.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// Cache file path
 const CACHE_FILE = path.join(process.cwd(), "data", "faqs-cache.json");
 
-async function syncCache() {
+export default async function syncCache() {
   let all = [];
 
-  // 1) Mongo
   try {
+    // 1) Mongo
     const docs = await Faq.find().lean().limit(500);
-    if (Array.isArray(docs)) {
-      all = all.concat(
-        docs.map((d) => ({
-          question: d.question,
-          answer: d.answer,
-          source: "mongo",
-        }))
-      );
-    }
+    all = all.concat(docs.map((d) => ({
+      question: d.question,
+      answer: d.answer,
+      source: "mongo"
+    })));
   } catch (err) {
-    console.error("❌ Error syncing from Mongo:", err.message);
+    console.error("❌ [Cron] Mongo sync failed:", err.message);
   }
 
-  // 2) Simple Sheets
   try {
+    // 2) Simple Sheets
     const s1 = await fetchSimpleSheetsFaqs();
     all = all.concat(s1.map((r) => ({ ...r, source: "sheets-simple" })));
   } catch (err) {
-    console.error("❌ Simple Sheets sync failed:", err.message);
+    console.error("❌ [Cron] Simple Sheets sync failed:", err.message);
   }
 
-  // 3) Advanced Sheets
   try {
+    // 3) Advanced Sheets
     const s2 = await fetchAdvancedSheetsFaqs();
     all = all.concat(s2.map((r) => ({ ...r, source: "sheets-advanced" })));
   } catch (err) {
-    console.error("❌ Advanced Sheets sync failed:", err.message);
+    console.error("❌ [Cron] Advanced Sheets sync failed:", err.message);
   }
 
-  // 4) Save to cache file
+  // Save to file
   try {
     fs.writeFileSync(CACHE_FILE, JSON.stringify(all, null, 2));
-    console.log("✅ FAQ cache synced at", new Date().toISOString());
+    console.log(`✅ [Cron] FAQ cache synced (${all.length} FAQs)`);
   } catch (err) {
-    console.error("❌ Failed writing cache file:", err.message);
+    console.error("❌ [Cron] Failed writing cache file:", err.message);
   }
-}
 
-export default syncCache;
+  return { ok: true, count: all.length };
+}
