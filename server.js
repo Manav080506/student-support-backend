@@ -84,9 +84,33 @@ function getAffirmation(name = null) {
 function sendResponse(text) {
   return { fulfillmentText: text, fulfillmentMessages: [{ text: { text: [text] } }] };
 }
-async function logChat({ query, response, intent, matchedQuestion = null, matchSource = "none", similarity = 0, affirmation = null }) {
+
+async function logChat({
+  query,
+  response,
+  intent,
+  matchedQuestion = null,
+  matchSource = "none",
+  similarity = 0,
+  affirmation = null,
+  latencyMs = null,
+  isOffline = false,
+  error = null,
+}) {
   try {
-    await ChatLog.create({ query, response, intent, matchedQuestion, matchSource, similarity, affirmation, createdAt: new Date() });
+    await ChatLog.create({
+      query,
+      response,
+      intent,
+      matchedQuestion,
+      matchSource,
+      similarity,
+      affirmation,
+      latencyMs,
+      isOffline,
+      error,
+      createdAt: new Date(),
+    });
   } catch (err) {
     console.error("❌ ChatLog save error:", err.message || err);
   }
@@ -158,55 +182,151 @@ app.post("/webhook", async (req, res) => {
     const params = req.body.queryResult?.parameters || {};
     const userQueryRaw = (req.body.queryResult?.queryText || "").trim();
 
-    // Normalize IDs
     const studentIdParam = Array.isArray(params.studentId) ? params.studentId[0] : params.studentId || params.userID || null;
     const parentIdParam = Array.isArray(params.parentId) ? params.parentId[0] : params.parentId || null;
     const mentorIdParam = Array.isArray(params.mentorId) ? params.mentorId[0] : params.mentorId || null;
 
-    // Load profile behind timeout
     const studentProfile = await withTimeout(async () => {
       if (!studentIdParam) return null;
       return await Student.findOne({ studentId: studentIdParam }).lean();
     }, 800, null);
 
-    // Example intent handling (showing one only)
+    const start = Date.now();
+
+    // ---------- Finance Intent ----------
     if (intent === "FinanceIntent") {
-      const fallback = "⚠️ Could not fetch finance details right now. Please try again.";
       const result = await withTimeout(async () => {
         if (!studentIdParam) return "Please provide your Student ID (e.g., STU001).";
         const student = await Student.findOne({ studentId: studentIdParam }).lean();
         if (!student) return "⚠️ I couldn’t find details for that student ID.";
-        await Badge.create({ studentId: studentIdParam, badgeName: "Finance Explorer", reason: "Checked finance summary" }).catch(() => {});
-        return `💰 *Finance Summary*\n- Student: ${student.name}\n- Pending Fees: ₹${student.feesPending}\n- Scholarships: ${Array.isArray(student.scholarships) ? student.scholarships.join(", ") : "N/A"}\n\n${getAffirmation(student.name)}`;
-      }, WEBHOOK_TIMEOUT_MS, fallback);
+        try { await Badge.create({ studentId: studentIdParam, badgeName: "Finance Explorer", reason: "Checked finance summary" }); } catch {}
+        return `💰 *Finance Summary*\n- Student: ${student.name}\n- Pending Fees: ₹${student.feesPending}\n- Scholarships: ${student.scholarships.join(", ")}\n\n${getAffirmation(student.name)}`;
+      }, WEBHOOK_TIMEOUT_MS, "⚠️ Could not fetch finance details right now.");
+      const latency = Date.now() - start;
+      await logChat({ query: userQueryRaw, response: result, intent, latencyMs: latency, matchSource: "database" });
       return res.json(sendResponse(result));
     }
 
-    // Other intents here... (ParentStatusIntent, MentorStatusIntent, CounselingIntent, DistressIntent, etc.)
-    // Keep synonym + sentiment fallback from your current code
+    // ---------- Parent Status Intent ----------
+    if (intent === "ParentStatusIntent") {
+      const result = await withTimeout(async () => {
+        if (!parentIdParam) return "Please provide your Parent ID (e.g., PARENT001).";
+        const parent = await Parent.findOne({ parentId: parentIdParam }).lean();
+        if (!parent) return "⚠️ I couldn’t find details for that parent ID.";
+        try { await Badge.create({ studentId: parentIdParam, badgeName: "Engaged Parent", reason: "Viewed child dashboard" }); } catch {}
+        const child = await Student.findOne({ studentId: parent.studentId }).lean();
+        return `👨‍👩‍👦 *Parent Dashboard*\nChild: ${child?.name || parent.studentId}\nAttendance: ${child?.attendance}\nMarks: ${child?.marks}\nFees Pending: ₹${child?.feesPending}`;
+      }, WEBHOOK_TIMEOUT_MS, "⚠️ Could not fetch parent dashboard right now.");
+      const latency = Date.now() - start;
+      await logChat({ query: userQueryRaw, response: result, intent, latencyMs: latency, matchSource: "database" });
+      return res.json(sendResponse(result));
+    }
 
-    return res.json(sendResponse(`I can guide you in Finance, Mentorship, Counseling, or Marketplace. ${getAffirmation(studentProfile?.name)}`));
+    // ---------- Mentor Status Intent ----------
+    if (intent === "MentorStatusIntent") {
+      const result = await withTimeout(async () => {
+        if (!mentorIdParam) return "Please provide your Mentor ID (e.g., MENTOR001).";
+        const mentor = await Mentor.findOne({ mentorId: mentorIdParam }).lean();
+        if (!mentor) return "⚠️ I couldn’t find details for that mentor ID.";
+        try { await Badge.create({ studentId: mentorIdParam, badgeName: "Active Mentor", reason: "Reviewed mentees" }); } catch {}
+        return `👨‍🏫 *Mentor Dashboard*\nMentees: ${mentor.mentees.join(", ")}\n\n${getAffirmation()}`;
+      }, WEBHOOK_TIMEOUT_MS, "⚠️ Could not fetch mentor dashboard right now.");
+      const latency = Date.now() - start;
+      await logChat({ query: userQueryRaw, response: result, intent, latencyMs: latency, matchSource: "database" });
+      return res.json(sendResponse(result));
+    }
+
+    // ---------- Counseling Intent ----------
+    if (intent === "CounselingIntent") {
+      const result = await withTimeout(async () => {
+        try { await Badge.create({ studentId: studentProfile?.studentId || "GENERIC", badgeName: "Wellbeing Seeker", reason: "Asked for counseling" }); } catch {}
+        return `🧠 *Counseling Support*\nA counselor will contact you soon.\nMeanwhile, try deep breathing.\n\n${getAffirmation(studentProfile?.name)}`;
+      }, WEBHOOK_TIMEOUT_MS, "⚠️ Could not schedule counseling right now.");
+      const latency = Date.now() - start;
+      await logChat({ query: userQueryRaw, response: result, intent, latencyMs: latency });
+      return res.json(sendResponse(result));
+    }
+
+    // ---------- Distress Intent ----------
+    if (intent === "DistressIntent") {
+      const resp = `🚨 *Distress Alert*\nYou are not alone. A counselor will be notified.\nUrgent? Call 📞 1800-599-0019\n\n${getAffirmation(studentProfile?.name)}`;
+      await logChat({ query: userQueryRaw, response: resp, intent, latencyMs: Date.now() - start, matchSource: "rule" });
+      return res.json(sendResponse(resp));
+    }
+
+    // ---------- Marketplace Intent ----------
+    if (intent === "MarketplaceIntent") {
+      const resp = `🛒 *Marketplace Listings*\n- 📚 Used Textbooks\n- 🧮 Calculators\n- 🛏 Hostel Essentials\n- 💻 Laptops\n\n${getAffirmation(studentProfile?.name)}`;
+      await logChat({ query: userQueryRaw, response: resp, intent, latencyMs: Date.now() - start, matchSource: "hardcoded" });
+      return res.json(sendResponse(resp));
+    }
+
+    // ---------- Mentorship Intent ----------
+    if (intent === "MentorshipIntent") {
+      const resp = `👨‍🏫 *Mentorship Available*\nMentors in CS, Mechanical, Commerce, AI/DS.\n\n${getAffirmation(studentProfile?.name)}`;
+      await logChat({ query: userQueryRaw, response: resp, intent, latencyMs: Date.now() - start, matchSource: "hardcoded" });
+      return res.json(sendResponse(resp));
+    }
+
+    // ---------- Reminder Intent ----------
+    if (intent === "ReminderIntent") {
+      const result = await withTimeout(async () => {
+        const userId = studentIdParam || parentIdParam || mentorIdParam || "GENERIC";
+        const reminders = await Reminder.find({ targetId: { $in: [userId, "GENERIC"] } }).sort({ createdAt: -1 }).limit(5).lean();
+        return reminders.length
+          ? `📌 Reminders:\n${reminders.map((r, i) => `${i + 1}. ${r.message}`).join("\n")}\n\n${getAffirmation(studentProfile?.name)}`
+          : `📭 No reminders.\n\n${getAffirmation(studentProfile?.name)}`;
+      }, WEBHOOK_TIMEOUT_MS, "⚠️ Could not fetch reminders right now.");
+      const latency = Date.now() - start;
+      await logChat({ query: userQueryRaw, response: result, intent, latencyMs: latency, matchSource: "database" });
+      return res.json(sendResponse(result));
+    }
+
+    // ---------- Default Fallback Intent ----------
+    if (intent === "Default Fallback Intent") {
+      const sres = sentiment.analyze(userQueryRaw);
+      if (sres.score <= -3) {
+        const resp = `😔 You seem low. Want me to connect you to a counselor? Call 📞 1800-599-0019\n\n${getAffirmation(studentProfile?.name)}`;
+        await logChat({ query: userQueryRaw, response: resp, intent, latencyMs: Date.now() - start, matchSource: "sentiment" });
+        return res.json(sendResponse(resp));
+      }
+      if (sres.score >= 3) {
+        const resp = `😊 Glad you’re doing well! Need study tips?\n\n${getAffirmation(studentProfile?.name)}`;
+        await logChat({ query: userQueryRaw, response: resp, intent, latencyMs: Date.now() - start, matchSource: "sentiment" });
+        return res.json(sendResponse(resp));
+      }
+
+      const best = await withTimeout(() => findBestFaq(userQueryRaw), WEBHOOK_TIMEOUT_MS, null);
+      const latency = Date.now() - start;
+
+      if (best) {
+        const resp = `${best.answer}\n\n${best.source === "local" ? "⚠️ *Offline mode active*" : ""}\n${getAffirmation(studentProfile?.name)}`;
+        await logChat({ query: userQueryRaw, response: resp, intent, matchedQuestion: best.question, matchSource: best.source, similarity: best.score, latencyMs: latency, isOffline: best.source === "local" });
+        return res.json(sendResponse(resp));
+      }
+
+      const resp = `🙏 Sorry, I couldn’t find an exact answer. I can help in Finance, Mentorship, Counseling, or Marketplace.\n\n${getAffirmation(studentProfile?.name)}`;
+      await logChat({ query: userQueryRaw, response: resp, intent, latencyMs });
+      return res.json(sendResponse(resp));
+    }
+
+    // ---------- Unhandled intents ----------
+    const resp = `I can guide you in Finance, Mentorship, Counseling, or Marketplace. ${getAffirmation(studentProfile?.name)}`;
+    await logChat({ query: userQueryRaw, response: resp, intent, latencyMs: Date.now() - start });
+    return res.json(sendResponse(resp));
   } catch (err) {
     console.error("❌ Webhook error:", err.message);
-    return res.json(sendResponse(`⚠️ Something went wrong. ${getAffirmation()}`));
+    const resp = `⚠️ Something went wrong. ${getAffirmation()}`;
+    await logChat({ query: req.body?.queryResult?.queryText || "", response: resp, intent: req.body?.queryResult?.intent?.displayName || "unknown", matchSource: "error", error: err.message });
+    return res.json(sendResponse(resp));
   }
 });
 
 // ---------- CRON JOBS ----------
-syncCache(); // Run once at startup
-
-cron.schedule("0 */6 * * *", () => {
-  console.log("⏳ Running FAQ cache sync...");
-  syncCache();
-});
-cron.schedule("0 9 * * *", () => {
-  console.log("⏳ Running daily reminders...");
-  runReminders();
-});
-cron.schedule("0 0 * * MON", () => {
-  console.log("⏳ Running weekly badge updates...");
-  runBadges();
-});
+syncCache();
+cron.schedule("0 */6 * * *", () => syncCache());
+cron.schedule("0 9 * * *", () => runReminders());
+cron.schedule("0 0 * * MON", () => runBadges());
 
 // ---------- Start ----------
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
