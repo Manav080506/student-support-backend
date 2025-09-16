@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import Faq from "../models/Faq.js";
 import { fetchSimpleSheetsFaqs } from "../utils/sheets-simple.js";
 import { fetchAdvancedSheetsFaqs } from "../utils/sheets-advanced.js";
+import { updateCronState } from "../utils/cronState.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -45,8 +46,10 @@ export default async function syncCache() {
   try {
     fs.writeFileSync(CACHE_FILE, JSON.stringify(all, null, 2));
     console.log(`✅ [Cron] FAQ cache synced (${all.length} FAQs)`);
+    updateCronState("syncCache", { count: all.length });
   } catch (err) {
     console.error("❌ [Cron] Failed writing cache file:", err.message);
+    updateCronState("syncCache", { count: 0, error: err.message });
   }
 
   return { ok: true, count: all.length };
