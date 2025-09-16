@@ -6,9 +6,8 @@ import { fetchSimpleSheetsFaqs } from "./sheets-simple.js";
 import { fetchAdvancedSheetsFaqs } from "./sheets-advanced.js";
 
 const LOCAL_FAQ_PATH = path.join(process.cwd(), "utils", "localFaqs.json");
-const OFFLINE_CACHE_PATH = path.join(process.cwd(), "data", "faqs-cache.json");
-
 const CACHE_TTL = Number(process.env.FAQ_CACHE_TTL_MS || 1000 * 60 * 5); // 5 min default
+
 let cache = { ts: 0, data: [] };
 
 function tokenize(text = "") {
@@ -45,7 +44,7 @@ async function loadAllSources(force = false) {
 
   let all = [];
 
-  // 1) Local JSON
+  // 1) local JSON
   try {
     const raw = fs.readFileSync(LOCAL_FAQ_PATH, "utf8");
     const arr = JSON.parse(raw);
@@ -56,7 +55,7 @@ async function loadAllSources(force = false) {
     console.warn("⚠️ No localFaqs.json found, skipping...");
   }
 
-  // 2) Mongo
+  // 2) mongo
   try {
     const docs = await Faq.find().lean().limit(500);
     if (Array.isArray(docs)) {
@@ -72,7 +71,7 @@ async function loadAllSources(force = false) {
     console.error("❌ Error loading FAQs from mongo:", err?.message || err);
   }
 
-  // 3) Simple Sheets
+  // 3) simple sheets
   try {
     const s1 = await fetchSimpleSheetsFaqs();
     all = all.concat(s1.map((r) => ({ ...r, source: "sheets-simple" })));
@@ -80,25 +79,12 @@ async function loadAllSources(force = false) {
     console.error("❌ fetchSimpleSheetsFaqs failed:", err.message);
   }
 
-  // 4) Advanced Sheets
+  // 4) advanced sheets
   try {
     const s2 = await fetchAdvancedSheetsFaqs();
     all = all.concat(s2.map((r) => ({ ...r, source: "sheets-advanced" })));
   } catch (err) {
     console.error("❌ fetchAdvancedSheetsFaqs failed:", err.message);
-  }
-
-  // 5) Offline Cache (new)
-  try {
-    if (fs.existsSync(OFFLINE_CACHE_PATH)) {
-      const raw = fs.readFileSync(OFFLINE_CACHE_PATH, "utf8");
-      const arr = JSON.parse(raw);
-      if (Array.isArray(arr)) {
-        all = all.concat(arr.map((r) => ({ ...r, source: "offline-cache" })));
-      }
-    }
-  } catch (err) {
-    console.error("⚠️ Could not load offline cache:", err.message);
   }
 
   cache = { ts: Date.now(), data: all };
@@ -120,9 +106,9 @@ export async function findBestFaq(query) {
 
   if (!best || best.score < 0.5) return null;
 
-  // Add offline mode warning if source is offline-cache
-  if (best.source === "offline-cache") {
-    best.answer = `⚠️ Offline Mode: ${best.answer}`;
+  // If best answer came from local JSON, append offline flag
+  if (best.source === "local") {
+    best.answer = `${best.answer}\n\n⚠️ *Offline mode active — answer from local cache*`;
   }
 
   return best;
