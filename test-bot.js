@@ -1,77 +1,57 @@
 // test-bot.js
 import fetch from "node-fetch";
 
-// Your backend URL (set in Render or .env for local)
-const BASE_URL = process.env.BACKEND_URL || "https://student-support-backend-4dg5.onrender.com";
+const BASE_URL = process.env.BOT_URL || "https://student-support-backend-4dg5.onrender.com/webhook";
 
-// Define test queries
-const TEST_QUERIES = [
-  // Finance
-  { text: "What is my fee due?", intent: "FinanceIntent", params: { studentId: "STU001" } },
-  { text: "Do I have any dues?", intent: "FinanceIntent", params: { studentId: "STU002" } },
-
-  // Parent
-  { text: "Parent dashboard", intent: "ParentStatusIntent", params: { parentId: "PARENT001" } },
-
-  // Mentor
-  { text: "Show my mentees", intent: "MentorStatusIntent", params: { mentorId: "MENTOR001" } },
-
-  // Counseling & Distress
-  { text: "I feel anxious", intent: "CounselingIntent" },
-  { text: "I am very depressed", intent: "DistressIntent" },
-  { text: "I want to end my life", intent: "DistressIntent" },
-
-  // Marketplace & Mentorship
-  { text: "Show me marketplace", intent: "MarketplaceIntent" },
-  { text: "Is there a commerce mentor?", intent: "MentorshipIntent" },
-
-  // Reminders
-  { text: "Any reminders for me?", intent: "ReminderIntent", params: { studentId: "STU001" } },
-
-  // Keyword FAQs
-  { text: "When are hostel mess timings?", intent: "Default Fallback Intent" },
-  { text: "What is SIH?", intent: "Default Fallback Intent" },
-  { text: "Library fine?", intent: "Default Fallback Intent" },
-  { text: "When is the fee deadline?", intent: "Default Fallback Intent" },
-
-  // Sentiment fallback
-  { text: "I feel lonely", intent: "Default Fallback Intent" },
-  { text: "Give me study tips!", intent: "Default Fallback Intent" },
-
-  // Random fallback
-  { text: "Blah blah random words", intent: "Default Fallback Intent" },
+// List of test queries
+const tests = [
+  { query: "When is my fee due?", expected: "FinanceIntent" },
+  { query: "What scholarships are available?", expected: "FinanceIntent" },
+  { query: "Show me my child’s performance", expected: "ParentStatusIntent" },
+  { query: "List my mentees", expected: "MentorStatusIntent" },
+  { query: "I feel anxious", expected: "CounselingIntent" },
+  { query: "I am very depressed", expected: "DistressIntent" },
+  { query: "suicide thoughts", expected: "DistressIntent" },
+  { query: "Do you have laptops for sale?", expected: "MarketplaceIntent" },
+  { query: "Where can I buy books?", expected: "keywordFAQ" },
+  { query: "I need a mentor in AI", expected: "keywordFAQ" },
+  { query: "Find me a mentor", expected: "MentorshipIntent" },
+  { query: "What reminders do I have?", expected: "ReminderIntent" },
+  { query: "Tell me hostel food timings", expected: "keywordFAQ" },
+  { query: "What is SIH?", expected: "keywordFAQ" },
+  { query: "I am so happy today!", expected: "sentiment-positive" },
+  { query: "Life is hopeless", expected: "sentiment-negative" }
 ];
 
-// Run tests
-async function runTests() {
-  console.log(`🚀 Running ${TEST_QUERIES.length} chatbot tests...\n`);
+async function runTest(query) {
+  try {
+    const res = await fetch(BASE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        queryResult: {
+          queryText: query,
+          intent: { displayName: "Default Fallback Intent" } // default, backend detects better
+        }
+      })
+    });
 
-  for (const q of TEST_QUERIES) {
-    const payload = {
-      queryResult: {
-        queryText: q.text,
-        intent: { displayName: q.intent },
-        parameters: q.params || {},
-      },
-    };
+    const data = await res.json();
+    const answer = data.fulfillmentText || "❌ No response";
 
-    try {
-      const res = await fetch(`${BASE_URL}/webhook`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json();
-
-      console.log(`📝 Query: "${q.text}"`);
-      console.log(`→ Intent: ${q.intent}`);
-      console.log(`→ Response: ${data.fulfillmentText}`);
-      console.log("-------------------------------------------------\n");
-    } catch (err) {
-      console.error(`❌ Failed for query "${q.text}":`, err.message);
-    }
+    console.log(`\n📝 Query: "${query}"`);
+    console.log(`→ Response: ${answer}`);
+  } catch (err) {
+    console.error(`❌ Error testing query "${query}":`, err.message);
   }
 }
 
-runTests();
+async function main() {
+  console.log(`🚀 Running bot tests against ${BASE_URL}`);
+  for (const t of tests) {
+    await runTest(t.query);
+  }
+  console.log("\n✅ Tests finished.");
+}
+
+main();
