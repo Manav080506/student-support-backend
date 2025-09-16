@@ -1,5 +1,5 @@
 // utils/cronState.js
-// Tracks the last run info for each cron job
+// Keeps track of last run info for each cron job
 
 const cronState = {
   syncCache: { lastRun: null, count: 0 },
