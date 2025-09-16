@@ -25,6 +25,9 @@ import syncCache from "./cron/syncCache.js";
 import runReminders from "./cron/reminders.js";
 import runBadges from "./cron/badges.js";
 
+// Routes
+import adminRoutes from "./routes/admin.js";
+
 dotenv.config();
 const app = express();
 app.use(bodyParser.json());
@@ -126,12 +129,8 @@ async function runAutoSeed() {
   }
 }
 
-// ---------- Admin protection ----------
-function requireAdmin(req, res, next) {
-  const key = req.headers["x-admin-key"] || req.query.adminKey;
-  if (!key || key !== ADMIN_KEY) return res.status(401).json({ error: "Unauthorized - admin key required" });
-  next();
-}
+// ---------- Routes ----------
+app.use("/admin", adminRoutes);
 
 // ---------- Webhook ----------
 app.post("/webhook", async (req, res) => {
@@ -146,7 +145,7 @@ app.post("/webhook", async (req, res) => {
   const studentProfile = studentIdParam ? await Student.findOne({ studentId: studentIdParam }).lean() : null;
 
   try {
-    // (… your intent handlers stay the same …)
+    // (your FinanceIntent, ParentStatusIntent, MentorStatusIntent, etc. code stays the same)
 
     // --- Default Fallback Intent ---
     if (intent === "Default Fallback Intent") {
@@ -173,23 +172,18 @@ app.post("/webhook", async (req, res) => {
 });
 
 // ---------- CRON JOBS ----------
+syncCache(); // Run once at startup
 
-// Sync FAQ cache immediately at startup
-syncCache();
-
-// Every 6 hours → sync FAQ cache
 cron.schedule("0 */6 * * *", () => {
   console.log("⏳ Running FAQ cache sync...");
   syncCache();
 });
 
-// Daily reminders (9 AM)
 cron.schedule("0 9 * * *", () => {
   console.log("⏳ Running daily reminders...");
   runReminders();
 });
 
-// Weekly badges (Monday midnight)
 cron.schedule("0 0 * * MON", () => {
   console.log("⏳ Running weekly badge updates...");
   runBadges();
