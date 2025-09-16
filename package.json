@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "dev:cron": "node cron/test-cron.js"
+    "dev:cron": "node cron/test-cron.js",
+    "test-bot": "node test-bot.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
