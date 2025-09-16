@@ -1,56 +1,28 @@
 // cron/syncCache.js
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
-import Faq from "../models/Faq.js";
-import { fetchSimpleSheetsFaqs } from "../utils/sheets-simple.js";
-import { fetchAdvancedSheetsFaqs } from "../utils/sheets-advanced.js";
-import { updateCronState } from "../utils/cronState.js";
+import { refreshFaqCache } from "../utils/getFaqData.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 const CACHE_FILE = path.join(process.cwd(), "data", "faqs-cache.json");
 
+function ensureDir() {
+  const dir = path.dirname(CACHE_FILE);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    console.log("📂 Created missing data/ directory");
+  }
+}
+
 export default async function syncCache() {
-  let all = [];
-
   try {
-    // 1) Mongo
-    const docs = await Faq.find().lean().limit(500);
-    all = all.concat(docs.map((d) => ({
-      question: d.question,
-      answer: d.answer,
-      source: "mongo"
-    })));
-  } catch (err) {
-    console.error("❌ [Cron] Mongo sync failed:", err.message);
-  }
+    console.log("⏳ [Cron] Refreshing FAQ cache...");
+    const allFaqs = await refreshFaqCache();
 
-  try {
-    // 2) Simple Sheets
-    const s1 = await fetchSimpleSheetsFaqs();
-    all = all.concat(s1.map((r) => ({ ...r, source: "sheets-simple" })));
-  } catch (err) {
-    console.error("❌ [Cron] Simple Sheets sync failed:", err.message);
-  }
+    ensureDir();
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(allFaqs, null, 2), "utf8");
 
-  try {
-    // 3) Advanced Sheets
-    const s2 = await fetchAdvancedSheetsFaqs();
-    all = all.concat(s2.map((r) => ({ ...r, source: "sheets-advanced" })));
-  } catch (err) {
-    console.error("❌ [Cron] Advanced Sheets sync failed:", err.message);
-  }
-
-  // Save to file
-  try {
-    fs.writeFileSync(CACHE_FILE, JSON.stringify(all, null, 2));
-    console.log(`✅ [Cron] FAQ cache synced (${all.length} FAQs)`);
-    updateCronState("syncCache", { count: all.length });
+    console.log(`✅ [Cron] Cached ${allFaqs.length} FAQs to ${CACHE_FILE}`);
   } catch (err) {
     console.error("❌ [Cron] Failed writing cache file:", err.message);
-    updateCronState("syncCache", { count: 0, error: err.message });
   }
-
-  return { ok: true, count: all.length };
 }
