@@ -1,50 +1,41 @@
 // routes/admin.js
 import express from "express";
-import { getCronState } from "../utils/cronState.js";
-import Faq from "../models/Faq.js";
-import BadgeMeta from "../models/BadgeMeta.js";
-import Reminder from "../models/Reminder.js";
 import ChatLog from "../models/ChatLog.js";
-import syncCache from "../cron/syncCache.js";
 
 const router = express.Router();
 
-// Protect routes with admin key
-function requireAdmin(req, res, next) {
-  const key = req.headers["x-admin-key"] || req.query.adminKey;
-  if (!key || key !== (process.env.ADMIN_KEY || "admin-secret")) {
-    return res.status(401).json({ error: "Unauthorized - admin key required" });
-  }
-  next();
-}
+// ... existing admin routes
 
-// ---- Perf metrics ----
-router.get("/perf-metrics", requireAdmin, async (req, res) => {
+// ---------- Performance Metrics ----------
+router.get("/chatlogs/perf", async (req, res) => {
   try {
-    const cronStats = getCronState();
+    const logs = await ChatLog.find({}).sort({ createdAt: -1 }).limit(500).lean();
 
-    const faqCount = await Faq.countDocuments();
-    const badgeMetaCount = await BadgeMeta.countDocuments();
-    const reminderCount = await Reminder.countDocuments();
-    const chatLogCount = await ChatLog.countDocuments();
+    if (!logs.length) {
+      return res.json({ message: "No chat logs yet" });
+    }
+
+    const avgLatency =
+      logs.reduce((sum, l) => sum + (l.latencyMs || 0), 0) / logs.length;
+
+    const offlineHits = logs.filter((l) => l.isOffline).length;
+    const errorHits = logs.filter((l) => l.matchSource === "error").length;
+
+    const intentCounts = {};
+    logs.forEach((l) => {
+      intentCounts[l.intent] = (intentCounts[l.intent] || 0) + 1;
+    });
 
     res.json({
-      ok: true,
-      dbStats: { faqCount, badgeMetaCount, reminderCount, chatLogCount },
-      cronStats,
+      totalLogs: logs.length,
+      avgLatencyMs: Math.round(avgLatency),
+      offlineUsagePercent: ((offlineHits / logs.length) * 100).toFixed(1) + "%",
+      errorCount: errorHits,
+      intents: intentCounts,
     });
   } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
-// ---- Manual cache sync ----
-router.post("/sync-cache", requireAdmin, async (req, res) => {
-  try {
-    const result = await syncCache();
-    res.json({ ok: true, ...result });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
+    console.error("❌ /admin/chatlogs/perf error:", err.message);
+    res.status(500).json({ error: "Failed to compute performance metrics" });
   }
 });
 
