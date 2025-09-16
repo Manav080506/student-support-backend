@@ -4,9 +4,9 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "start": "node server.js",        // Production (Render)
-    "dev": "nodemon server.js",       // Local dev with auto-restart
-    "dev:cron": "node cron/test-cron.js"  // Run cron jobs manually
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "dev:cron": "node cron/test-cron.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
