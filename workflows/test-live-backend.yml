@@ -1,0 +1,211 @@
+name: Test Student Support Backend (Live Render)
+
+on:
+  workflow_dispatch:   # Run manually from Actions tab
+  schedule:
+    - cron: "0 6 * * *"   # Optional: daily run at 6AM UTC
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Test FAQ - Hostel Mess
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"When is mess food served?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "Response: $RESPONSE"
+          echo "$RESPONSE" | grep "Hostel mess timings"
+
+      - name: Test FAQ - Sports Ground
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Where is cricket ground?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "Sports ground"
+
+      - name: Test FAQ - WiFi
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"How to connect wifi?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "WiFi login"
+
+      - name: Test FAQ - Fees
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Check my fees","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "pending fees"
+
+      - name: Test FAQ - Dues
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Do I have any dues?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "dues pending"
+
+      - name: Test FAQ - Scholarship
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Are scholarships open?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "scholarship"
+
+      - name: Test FAQ - Deadline
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"What is the next deadline?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "deadline"
+
+      - name: Test FAQ - Books
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Where can I get books?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "books"
+
+      - name: Test FAQ - Laptop
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"I need a laptop","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "laptops"
+
+      - name: Test FAQ - Revaluation
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"How to apply revaluation?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "Revaluation"
+
+      - name: Test FAQ - Clinic
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Where is the clinic?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "clinic"
+
+      - name: Test FAQ - Events
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Any upcoming events?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "events"
+
+      - name: Test FAQ - Sports Club
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Join football club","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "sports office"
+
+      - name: Test FAQ - Bonafide
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"How to apply bonafide?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "bonafide"
+
+      - name: Test FAQ - ID Card
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Lost my ID card","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "ID card"
+
+      - name: Test FAQ - Library Fine
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"library fine details","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "Library fine"
+
+      - name: Test FAQ - Bus Pass
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"How to get bus pass?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "bus pass"
+
+      - name: Test FAQ - Contact Admin
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"How to contact admin?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "Contact admin"
+
+      # ---------- Intents ----------
+      - name: Test FinanceIntent
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Check finance for STU001","intent":{"displayName":"FinanceIntent"},"parameters":{"studentId":"STU001"}}}')
+          echo "$RESPONSE" | grep "Finance Summary"
+
+      - name: Test ParentStatusIntent
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Parent dashboard","intent":{"displayName":"ParentStatusIntent"},"parameters":{"parentId":"PARENT001"}}}')
+          echo "$RESPONSE" | grep "Parent Dashboard"
+
+      - name: Test MentorStatusIntent
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Mentor dashboard","intent":{"displayName":"MentorStatusIntent"},"parameters":{"mentorId":"MENTOR001"}}}')
+          echo "$RESPONSE" | grep "Mentor Dashboard"
+
+      - name: Test CounselingIntent
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"I need counseling","intent":{"displayName":"CounselingIntent"}}}')
+          echo "$RESPONSE" | grep "Counseling services"
+
+      - name: Test DistressIntent
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"I feel very depressed","intent":{"displayName":"DistressIntent"}}}')
+          echo "$RESPONSE" | grep "distress"
+
+      - name: Test MarketplaceIntent
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Show marketplace","intent":{"displayName":"MarketplaceIntent"}}}')
+          echo "$RESPONSE" | grep "Marketplace Listings"
+
+      - name: Test MentorshipIntent
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Show mentors","intent":{"displayName":"MentorshipIntent"}}}')
+          echo "$RESPONSE" | grep "Mentorship Available"
+
+      # ---------- Sentiment ----------
+      - name: Test Sentiment - Positive
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"I am very happy today","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "Glad you’re doing well"
+
+      - name: Test Sentiment - Negative
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"I am hopeless","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "connect you to a counselor"
+
+      # ---------- Final Fallback ----------
+      - name: Test Fallback - Unknown Query
+        run: |
+          RESPONSE=$(curl -s -X POST https://student-support-backend-4dg5.onrender.com/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Blah blah blah","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "couldn’t find"
