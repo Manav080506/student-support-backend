@@ -1,0 +1,36 @@
+name: Backend Tests
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # allows manual run from GitHub UI
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout your repo
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      # Install dependencies
+      - name: Install dependencies
+        run: npm install
+
+      # Install Newman (Postman CLI)
+      - name: Install Newman
+        run: npm install -g newman
+
+      # Run Postman Collection Tests
+      - name: Run Student Support Bot Tests
+        run: |
+          newman run ./tests/student-support-full-tests.json \
+            --env-var BASE_URL=${{ secrets.BASE_URL }}
