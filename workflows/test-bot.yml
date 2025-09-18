@@ -1,0 +1,19 @@
+name: Backend Bot Tests
+
+on:
+  workflow_dispatch:  # run manually
+  push:
+    branches: [ "main" ]
+
+jobs:
+  test-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: Install Newman
+        run: npm install -g newman
+
+      - name: Run Postman Tests
+        run: newman run .github/tests/student-support.postman_collection.json --reporters cli
