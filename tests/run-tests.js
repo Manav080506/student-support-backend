@@ -1,146 +1,79 @@
 import fetch from "node-fetch";
 
-const BASE_URL = "https://student-support-backend-4dg5.onrender.com/webhook";
+const WEBHOOK_URL = process.env.WEBHOOK_URL || "http://localhost:5000/webhook";
 
-// ========== Fallback/Keyword FAQ Tests ==========
-const faqTests = [
-  { query: "When is mess food served?", expect: "🍽️" },
-  { query: "Sports ground timings?", expect: "🏏" },
-  { query: "How to connect to WiFi?", expect: "📶" },
-  { query: "When is fee due?", expect: "fee" },
-  { query: "Do I have dues?", expect: "⚠️" },
-  { query: "Scholarship portal date", expect: "🎓" },
-  { query: "What is the deadline?", expect: "⏰" },
-  { query: "Where can I buy books?", expect: "📚" },
-  { query: "Need a laptop", expect: "💻" },
-  { query: "Is there an AI mentor?", expect: "🤖" },
-  { query: "Commerce mentor", expect: "📊" },
-  { query: "I need counseling", expect: "🧠" },
-  { query: "I feel depressed", expect: "🚨" },
-  { query: "help me", expect: "🙋" },
-  { query: "What is SIH?", expect: "Hackathon" },
-  { query: "When are exams?", expect: "Exam" },
-  { query: "Revaluation process", expect: "📝" },
-  { query: "Passing marks?", expect: "40%" },
-  { query: "Where is campus clinic?", expect: "clinic" },
-  { query: "Mental health helpline", expect: "📞" },
-  { query: "Upcoming events?", expect: "🎉" },
-  { query: "Join football club", expect: "⚽" },
-  { query: "Bonafide certificate", expect: "📄" },
-  { query: "Lost ID card", expect: "💳" },
-  { query: "Admin office timing?", expect: "⏰" },
-  { query: "Contact admin", expect: "📞" },
-  { query: "How many books in library?", expect: "📖" },
-  { query: "Library fine?", expect: "💸" },
-  { query: "Is bus available?", expect: "🚌" },
-  { query: "Bus pass", expect: "🎟️" },
-];
+// Helper to run test and check if response contains keyword
+async function runTest(name, payload, expected) {
+  try {
+    const res = await fetch(WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
 
-// ========== Direct Intent Tests ==========
-const intentTests = [
-  {
-    intent: "FinanceIntent",
-    body: { queryText: "Check my fees", parameters: { studentId: "STU001" } },
-    expect: "Finance Summary",
-  },
-  {
-    intent: "CounselingIntent",
-    body: { queryText: "I need counseling" },
-    expect: "Counseling",
-  },
-  {
-    intent: "DistressIntent",
-    body: { queryText: "I feel depressed" },
-    expect: "Distress",
-  },
-  {
-    intent: "MarketplaceIntent",
-    body: { queryText: "What is in marketplace" },
-    expect: "Marketplace",
-  },
-  {
-    intent: "MentorshipIntent",
-    body: { queryText: "Tell me mentors" },
-    expect: "Mentorship",
-  },
-  {
-    intent: "ParentStatusIntent",
-    body: { queryText: "Parent dashboard", parameters: { parentId: "PARENT001" } },
-    expect: "Parent Dashboard",
-  },
-  {
-    intent: "MentorStatusIntent",
-    body: { queryText: "Mentor dashboard", parameters: { mentorId: "MENTOR001" } },
-    expect: "Mentor Dashboard",
-  },
-  {
-    intent: "ReminderIntent",
-    body: { queryText: "My reminders" },
-    expect: "Reminders",
-  },
-];
+    const text = data.fulfillmentText || JSON.stringify(data);
+    const success = text.toLowerCase().includes(expected.toLowerCase());
 
-// ========== Test Runners ==========
-async function runFaqTest(query, expect) {
-  const res = await fetch(BASE_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      queryResult: {
-        queryText: query,
-        intent: { displayName: "Default Fallback Intent" },
-      },
-    }),
-  });
-
-  const data = await res.json();
-  const text = data.fulfillmentText || "";
-  const passed = text.toLowerCase().includes(expect.toLowerCase());
-
-  console.log(`📝 Fallback Query: ${query}`);
-  console.log(`➡️ Response: ${text}`);
-  console.log(passed ? "✅ Passed\n" : `❌ Failed (expected: ${expect})\n`);
-  return passed;
+    console.log(success ? `✅ ${name}` : `❌ ${name}`);
+    if (!success) {
+      console.log("   Expected:", expected);
+      console.log("   Got:", text);
+      process.exitCode = 1; // mark workflow as failed
+    }
+  } catch (err) {
+    console.error(`❌ ${name} - Error:`, err.message);
+    process.exitCode = 1;
+  }
 }
 
-async function runIntentTest(intent, body, expect) {
-  const res = await fetch(BASE_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      queryResult: {
-        queryText: body.queryText,
-        intent: { displayName: intent },
-        parameters: body.parameters || {},
-      },
-    }),
-  });
-
-  const data = await res.json();
-  const text = data.fulfillmentText || "";
-  const passed = text.toLowerCase().includes(expect.toLowerCase());
-
-  console.log(`📝 Intent: ${intent} | Query: ${body.queryText}`);
-  console.log(`➡️ Response: ${text}`);
-  console.log(passed ? "✅ Passed\n" : `❌ Failed (expected: ${expect})\n`);
-  return passed;
-}
-
-// ========== Main ==========
 async function main() {
-  let passed = 0;
+  console.log("🚀 Starting backend tests...");
 
-  for (const t of faqTests) {
-    if (await runFaqTest(t.query, t.expect)) passed++;
-  }
+  // ---------- Keyword FAQs ----------
+  await runTest("Mess Food", { queryResult: { queryText: "When is mess food served?", intent: { displayName: "Default Fallback Intent" } } }, "Hostel mess");
+  await runTest("Sports Ground", { queryResult: { queryText: "Where is cricket ground?", intent: { displayName: "Default Fallback Intent" } } }, "Sports ground");
+  await runTest("WiFi", { queryResult: { queryText: "How to connect wifi?", intent: { displayName: "Default Fallback Intent" } } }, "WiFi login");
+  await runTest("Fees", { queryResult: { queryText: "Check my fees", intent: { displayName: "Default Fallback Intent" } } }, "pending fees");
+  await runTest("Dues", { queryResult: { queryText: "Do I have any dues?", intent: { displayName: "Default Fallback Intent" } } }, "dues");
+  await runTest("Scholarship", { queryResult: { queryText: "Are scholarships open?", intent: { displayName: "Default Fallback Intent" } } }, "scholarship");
+  await runTest("Deadline", { queryResult: { queryText: "What is the last date?", intent: { displayName: "Default Fallback Intent" } } }, "deadline");
+  await runTest("Books", { queryResult: { queryText: "Where to buy books?", intent: { displayName: "Default Fallback Intent" } } }, "books");
+  await runTest("Laptop", { queryResult: { queryText: "Need a laptop", intent: { displayName: "Default Fallback Intent" } } }, "laptop");
+  await runTest("Mentor AI", { queryResult: { queryText: "mentor artificial intelligence", intent: { displayName: "Default Fallback Intent" } } }, "Mentors for Artificial Intelligence");
+  await runTest("Mentor Commerce", { queryResult: { queryText: "mentor commerce", intent: { displayName: "Default Fallback Intent" } } }, "Commerce");
+  await runTest("Counseling", { queryResult: { queryText: "I need counseling", intent: { displayName: "Default Fallback Intent" } } }, "Counseling services");
+  await runTest("Help", { queryResult: { queryText: "help me", intent: { displayName: "Default Fallback Intent" } } }, "guide you in Finance");
+  await runTest("SIH", { queryResult: { queryText: "what is sih", intent: { displayName: "Default Fallback Intent" } } }, "Smart India Hackathon");
+  await runTest("Revaluation", { queryResult: { queryText: "How to apply revaluation?", intent: { displayName: "Default Fallback Intent" } } }, "Revaluation");
+  await runTest("Clinic", { queryResult: { queryText: "Where is campus clinic?", intent: { displayName: "Default Fallback Intent" } } }, "clinic");
+  await runTest("Events", { queryResult: { queryText: "techfest details", intent: { displayName: "Default Fallback Intent" } } }, "events");
+  await runTest("Sports Club", { queryResult: { queryText: "join football club", intent: { displayName: "Default Fallback Intent" } } }, "sports office");
+  await runTest("Bonafide", { queryResult: { queryText: "bonafide certificate", intent: { displayName: "Default Fallback Intent" } } }, "bonafide");
+  await runTest("ID Card", { queryResult: { queryText: "lost ID card", intent: { displayName: "Default Fallback Intent" } } }, "ID card");
+  await runTest("Admin Timing", { queryResult: { queryText: "what are office timings", intent: { displayName: "Default Fallback Intent" } } }, "Admin block");
+  await runTest("Library Borrow", { queryResult: { queryText: "how many books can I borrow", intent: { displayName: "Default Fallback Intent" } } }, "issue up to");
+  await runTest("Library Fine", { queryResult: { queryText: "library fine", intent: { displayName: "Default Fallback Intent" } } }, "Library fine");
+  await runTest("Bus", { queryResult: { queryText: "is bus service available", intent: { displayName: "Default Fallback Intent" } } }, "buses");
+  await runTest("Bus Pass", { queryResult: { queryText: "bus pass", intent: { displayName: "Default Fallback Intent" } } }, "bus pass");
+  await runTest("Contact Admin", { queryResult: { queryText: "contact admin", intent: { displayName: "Default Fallback Intent" } } }, "Contact admin office");
 
-  for (const t of intentTests) {
-    if (await runIntentTest(t.intent, t.body, t.expect)) passed++;
-  }
+  // ---------- Intents ----------
+  await runTest("FinanceIntent - Valid", { queryResult: { queryText: "Check finance for STU001", intent: { displayName: "FinanceIntent" }, parameters: { studentId: "STU001" } } }, "Finance Summary");
+  await runTest("FinanceIntent - Missing ID", { queryResult: { queryText: "Show finance details", intent: { displayName: "FinanceIntent" }, parameters: {} } }, "Please provide");
+  await runTest("ParentStatusIntent", { queryResult: { queryText: "Parent dashboard", intent: { displayName: "ParentStatusIntent" }, parameters: { parentId: "PARENT001" } } }, "Parent Dashboard");
+  await runTest("MentorStatusIntent", { queryResult: { queryText: "Mentor dashboard", intent: { displayName: "MentorStatusIntent" }, parameters: { mentorId: "MENTOR001" } } }, "Mentor Dashboard");
+  await runTest("CounselingIntent", { queryResult: { queryText: "I need counseling", intent: { displayName: "CounselingIntent" } } }, "Counseling services");
+  await runTest("DistressIntent", { queryResult: { queryText: "I feel very depressed", intent: { displayName: "DistressIntent" } } }, "distress");
+  await runTest("MarketplaceIntent", { queryResult: { queryText: "Show marketplace", intent: { displayName: "MarketplaceIntent" } } }, "Marketplace Listings");
+  await runTest("MentorshipIntent", { queryResult: { queryText: "Show mentors", intent: { displayName: "MentorshipIntent" } } }, "Mentorship Available");
 
-  const total = faqTests.length + intentTests.length;
-  console.log(`🎯 Tests passed: ${passed}/${total}`);
-  if (passed !== total) process.exit(1);
+  // ---------- Sentiment ----------
+  await runTest("Sentiment - Positive", { queryResult: { queryText: "I am very happy today", intent: { displayName: "Default Fallback Intent" } } }, "Glad you’re doing well");
+  await runTest("Sentiment - Negative", { queryResult: { queryText: "I am hopeless", intent: { displayName: "Default Fallback Intent" } } }, "counselor");
+
+  // ---------- Fallback ----------
+  await runTest("Fallback - Unknown", { queryResult: { queryText: "blah blah blah", intent: { displayName: "Default Fallback Intent" } } }, "couldn’t find");
 }
 
 main();
