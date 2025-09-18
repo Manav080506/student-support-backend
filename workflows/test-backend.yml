@@ -1,0 +1,52 @@
+name: Backend Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Start server in background
+        run: |
+          nohup npm start &
+          sleep 5
+
+      - name: Test webhook - mess food
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"When is mess food served?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "Response: $RESPONSE"
+          echo "$RESPONSE" | grep "Hostel mess timings"
+
+      - name: Test webhook - counseling
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"I need counseling","intent":{"displayName":"CounselingIntent"}}}')
+          echo "Response: $RESPONSE"
+          echo "$RESPONSE" | grep "Counseling services"
+
+      - name: Test webhook - finance
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Check finance for STU001","intent":{"displayName":"FinanceIntent","parameters":{"studentId":"STU001"}}}}')
+          echo "Response: $RESPONSE"
+          echo "$RESPONSE" | grep "Finance Summary"
