@@ -6,6 +6,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import Sentiment from "sentiment";
 import fetch from "node-fetch";
+import stringSimilarity from "string-similarity";
 
 import Student from "./models/Student.js";
 import Parent from "./models/Parent.js";
@@ -35,7 +36,7 @@ const API_KEY = process.env.GOOGLE_API_KEY;
 
 // ---------- Health ----------
 app.get("/", (req, res) => {
-  res.send("✅ Student Support Backend is running — with MongoDB + Keyword FAQs.");
+  res.send("✅ Student Support Backend is running — with MongoDB + Keyword FAQs + Fuzzy Matching.");
 });
 
 // ---------- MongoDB ----------
@@ -133,11 +134,33 @@ async function findKeywordFaq(query) {
   if (!keywordFaqs.length) await loadKeywordFaqs();
 
   const lower = query.toLowerCase();
+
+  // 🔍 Exact match first
   for (const item of keywordFaqs) {
     if (item.keywords.some((kw) => lower.includes(kw))) {
-      return { answer: item.answer, matched: item.keywords, source: item.source };
+      return { answer: item.answer, matched: item.keywords, source: "keyword-exact" };
     }
   }
+
+  // 🔍 Fuzzy match if no exact match
+  let bestMatch = null;
+  let bestScore = 0;
+
+  for (const item of keywordFaqs) {
+    for (const kw of item.keywords) {
+      const score = stringSimilarity.compareTwoStrings(lower, kw);
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = { answer: item.answer, matched: [kw], score, source: "keyword-fuzzy" };
+      }
+    }
+  }
+
+  if (bestMatch && bestScore >= 0.6) {
+    console.log(`🔍 Fuzzy match found: "${bestMatch.matched}" (score: ${bestScore})`);
+    return bestMatch;
+  }
+
   return null;
 }
 
@@ -157,6 +180,8 @@ app.post("/webhook", async (req, res) => {
   try {
     const intent = req.body.queryResult?.intent?.displayName || "unknown";
     const userQueryRaw = (req.body.queryResult?.queryText || "").trim();
+
+    console.log(`👉 Query: "${userQueryRaw}", Intent: ${intent}`);
 
     // --- DistressIntent ---
     if (intent === "DistressIntent") {
@@ -200,7 +225,7 @@ app.post("/webhook", async (req, res) => {
 
     // --- Default Fallback Intent ---
     if (intent === "Default Fallback Intent") {
-      // 1. Keyword FAQ first
+      // 1. Keyword FAQ (with fuzzy match)
       const kw = await findKeywordFaq(userQueryRaw);
       if (kw) {
         const resp = `${kw.answer}\n\n${getAffirmation()}`;
@@ -216,16 +241,16 @@ app.post("/webhook", async (req, res) => {
         return res.json(sendResponse(resp));
       }
 
-      // 3. Sentiment (last)
+      // 3. Sentiment analysis
       const sres = sentiment.analyze(userQueryRaw);
       if (sres.score <= -3) {
         const resp = `😔 You seem low. Want me to connect you to a counselor?\nCall 📞 1800-599-0019\n\n${getAffirmation()}`;
-        await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "sentiment" });
+        await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "sentiment-negative" });
         return res.json(sendResponse(resp));
       }
       if (sres.score >= 3) {
-        const resp = `😊 Glad you’re doing well! Need study tips?\n\n${getAffirmation()}`;
-        await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "sentiment" });
+        const resp = `😊 Glad you’re doing well! Keep it up!\n\n${getAffirmation()}`;
+        await logChat({ query: userQueryRaw, response: resp, intent, matchSource: "sentiment-positive" });
         return res.json(sendResponse(resp));
       }
 
