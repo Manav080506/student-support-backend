@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch: # allows you to run manually from Actions tab
+  workflow_dispatch: # allows manual trigger
 
 jobs:
   test-backend:
@@ -25,8 +25,34 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # 4. Run test script
+      # 4. Run tests
       - name: Run API tests
         run: node .github/tests/run-tests.js
         env:
           WEBHOOK_URL: https://student-support-backend-4dg5.onrender.com/webhook
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+          ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
+          AUTO_SEED: ${{ secrets.AUTO_SEED }}
+          FAQ_MIN_SCORE: ${{ secrets.FAQ_MIN_SCORE }}
+          WEBHOOK_TIMEOUT_MS: ${{ secrets.WEBHOOK_TIMEOUT_MS }}
+
+      # 5. Send Email on Failure
+      - name: Send failure email
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_HOST }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASS }}
+          subject: "❌ Backend Tests Failed"
+          to: ${{ secrets.ALERT_EMAIL }}
+          from: Student Support Bot <${{ secrets.SMTP_USER }}>
+          body: "One or more backend tests have failed. Please check the GitHub Actions logs."
