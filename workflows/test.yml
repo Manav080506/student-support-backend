@@ -1,0 +1,32 @@
+name: Backend Tests
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # allows you to run manually from Actions tab
+
+jobs:
+  test-backend:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout repo
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # 2. Set up Node.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      # 3. Install dependencies
+      - name: Install dependencies
+        run: npm install
+
+      # 4. Run test script
+      - name: Run API tests
+        run: node .github/tests/run-tests.js
+        env:
+          WEBHOOK_URL: https://student-support-backend-4dg5.onrender.com/webhook
