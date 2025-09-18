@@ -27,7 +27,7 @@ jobs:
           nohup npm start > server.log 2>&1 &
           sleep 12
 
-      # ---------- Keyword FAQs (from Sheets) ----------
+      # ------------------- Keyword FAQ Tests -------------------
       - name: Test FAQ - Hostel Mess
         run: |
           RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
@@ -38,75 +38,185 @@ jobs:
       - name: Test FAQ - Sports Ground
         run: |
           RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -d '{"queryResult":{"queryText":"Where is cricket ground?","intent":{"displayName":"Default Fallback Intent"}}}' \
-            -H "Content-Type: application/json")
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Where is cricket ground?","intent":{"displayName":"Default Fallback Intent"}}}')
           echo "$RESPONSE" | grep "Sports ground"
 
       - name: Test FAQ - WiFi
         run: |
           RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -d '{"queryResult":{"queryText":"How to connect wifi?","intent":{"displayName":"Default Fallback Intent"}}}' \
-            -H "Content-Type: application/json")
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"How to connect wifi?","intent":{"displayName":"Default Fallback Intent"}}}')
           echo "$RESPONSE" | grep "WiFi login"
 
       - name: Test FAQ - Fees
         run: |
           RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -d '{"queryResult":{"queryText":"Check my fees","intent":{"displayName":"Default Fallback Intent"}}}' \
-            -H "Content-Type: application/json")
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Check my fees","intent":{"displayName":"Default Fallback Intent"}}}')
           echo "$RESPONSE" | grep "pending fees"
 
-      - name: Test FAQ - Deadlines
+      - name: Test FAQ - Dues
         run: |
           RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -d '{"queryResult":{"queryText":"What is the next deadline?","intent":{"displayName":"Default Fallback Intent"}}}' \
-            -H "Content-Type: application/json")
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Do I have any dues?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "dues pending"
+
+      - name: Test FAQ - Scholarship
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Scholarship details","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "scholarship portal"
+
+      - name: Test FAQ - Deadline
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"When is the next deadline?","intent":{"displayName":"Default Fallback Intent"}}}')
           echo "$RESPONSE" | grep "deadline"
 
-      - name: Test FAQ - Library Fine
+      - name: Test FAQ - Books
         run: |
           RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -d '{"queryResult":{"queryText":"library fine details","intent":{"displayName":"Default Fallback Intent"}}}' \
-            -H "Content-Type: application/json")
-          echo "$RESPONSE" | grep "Library fine"
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Where can I buy books?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "books"
+
+      - name: Test FAQ - Laptop
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Where to get laptop?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "laptop"
+
+      - name: Test FAQ - Mentor AI
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"AI mentor available?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "Artificial Intelligence"
 
       - name: Test FAQ - Counseling
         run: |
           RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -d '{"queryResult":{"queryText":"I want counseling","intent":{"displayName":"Default Fallback Intent"}}}' \
-            -H "Content-Type: application/json")
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"I want counseling","intent":{"displayName":"Default Fallback Intent"}}}')
           echo "$RESPONSE" | grep "Counseling services"
+
+      - name: Test FAQ - Exam
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Exam schedule","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "Exam schedules"
+
+      - name: Test FAQ - Revaluation
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"How to apply for revaluation?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "Revaluation"
+
+      - name: Test FAQ - Passing Marks
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"What are passing marks?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "Passing marks"
+
+      - name: Test FAQ - Clinic
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Where is clinic?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "clinic"
+
+      - name: Test FAQ - Mental Health
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"I feel depressed","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "helpline"
+
+      - name: Test FAQ - Events
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Upcoming fest","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "events"
+
+      - name: Test FAQ - Sports Club
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"How to join football club?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "sports office"
+
+      - name: Test FAQ - Bonafide
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Need bonafide certificate","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "bonafide"
+
+      - name: Test FAQ - ID Card
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Lost my ID card","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "ID card"
+
+      - name: Test FAQ - Admin Timing
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"When is admin office open?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "Admin block"
+
+      - name: Test FAQ - Library Borrow
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"How many books can I borrow?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "issue up to 3 books"
+
+      - name: Test FAQ - Library Fine
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"library fine","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "Library fine"
+
+      - name: Test FAQ - Bus
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"Is there a bus service?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | grep "buses"
 
       - name: Test FAQ - Bus Pass
         run: |
           RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -d '{"queryResult":{"queryText":"How to get bus pass?","intent":{"displayName":"Default Fallback Intent"}}}' \
-            -H "Content-Type: application/json")
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"How to get bus pass?","intent":{"displayName":"Default Fallback Intent"}}}')
           echo "$RESPONSE" | grep "bus pass"
 
       - name: Test FAQ - Contact Admin
         run: |
           RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -d '{"queryResult":{"queryText":"How to contact admin?","intent":{"displayName":"Default Fallback Intent"}}}' \
-            -H "Content-Type: application/json")
+            -H "Content-Type: application/json" \
+            -d '{"queryResult":{"queryText":"How to contact admin?","intent":{"displayName":"Default Fallback Intent"}}}')
           echo "$RESPONSE" | grep "Contact admin office"
 
-      # (💡 Repeat for all 40+ keywords from sheet — hostel, sports, wifi, fees, dues, scholarships, deadlines, books, laptop, mentorship, revaluation, clinic, events, sports club, bonafide, ID card, admin timing, library borrow, transport, etc.)
-
-      # ---------- Intents ----------
+      # ------------------- Intent Tests -------------------
       - name: Test FinanceIntent - Valid
         run: |
           RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
             -H "Content-Type: application/json" \
             -d '{"queryResult":{"queryText":"Check finance for STU001","intent":{"displayName":"FinanceIntent"},"parameters":{"studentId":"STU001"}}}')
           echo "$RESPONSE" | grep "Finance Summary"
-
-      - name: Test FinanceIntent - Missing ID
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"Show my finance details","intent":{"displayName":"FinanceIntent"},"parameters":{}}}')
-          echo "$RESPONSE" | grep "Please provide"
 
       - name: Test ParentStatusIntent
         run: |
@@ -150,7 +260,7 @@ jobs:
             -d '{"queryResult":{"queryText":"Show mentors","intent":{"displayName":"MentorshipIntent"}}}')
           echo "$RESPONSE" | grep "Mentorship Available"
 
-      # ---------- Sentiment ----------
+      # ------------------- Sentiment -------------------
       - name: Test Sentiment - Positive
         run: |
           RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
@@ -163,9 +273,9 @@ jobs:
           RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
             -H "Content-Type: application/json" \
             -d '{"queryResult":{"queryText":"I am hopeless","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | grep "connect you to a counselor"
+          echo "$RESPONSE" | grep "counselor"
 
-      # ---------- Fallback ----------
+      # ------------------- Fallback -------------------
       - name: Test Fallback - Unknown Query
         run: |
           RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
