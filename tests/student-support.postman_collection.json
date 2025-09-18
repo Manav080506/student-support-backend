@@ -1,0 +1,33 @@
+{
+  "info": {
+    "name": "Student Support Bot Tests",
+    "_postman_id": "12345",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Mess Food Timings",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": { "raw": "https://student-support-backend-4dg5.onrender.com/webhook" },
+        "body": {
+          "mode": "raw",
+          "raw": "{ \"queryResult\": { \"queryText\": \"When is mess food served?\", \"intent\": { \"displayName\": \"Default Fallback Intent\" } } }"
+        }
+      }
+    },
+    {
+      "name": "Scholarship Query",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": { "raw": "https://student-support-backend-4dg5.onrender.com/webhook" },
+        "body": {
+          "mode": "raw",
+          "raw": "{ \"queryResult\": { \"queryText\": \"Are there any scholarships available?\", \"intent\": { \"displayName\": \"Default Fallback Intent\" } } }"
+        }
+      }
+    }
+  ]
+}
