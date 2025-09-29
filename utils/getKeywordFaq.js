@@ -1,59 +1,58 @@
-// utils/getKeywordFaq.js
-import { GoogleSpreadsheet } from "google-spreadsheet";
+import fetch from "node-fetch";
+import stringSimilarity from "string-similarity";
 
-let keywordCache = [];
+let keywordFaqs = [];
 
-// Load from Google Sheets
-async function fetchKeywordFaqsFromSheets() {
-  if (!process.env.GOOGLE_SHEETS_ID || !process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL) {
-    console.warn("⚠️ Missing Google Sheets env vars — skipping keyword FAQs.");
+/** Load keyword FAQs from Google Sheets */
+export async function loadKeywordFaqs(sheetId, apiKey) {
+  if (!sheetId || !apiKey) {
+    console.warn("⚠️ Missing GOOGLE_SHEET_ID or GOOGLE_API_KEY — skipping keyword FAQs.");
     return [];
   }
-
   try {
-    const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEETS_ID);
-    await doc.useServiceAccountAuth({
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
-    });
-    await doc.loadInfo();
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Keywords?key=${apiKey}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!data.values || data.values.length < 2) return [];
 
-    const sheet = doc.sheetsByTitle["Keywords"]; // Tab name = "Keywords"
-    if (!sheet) {
-      console.warn("⚠️ No 'Keywords' sheet found.");
-      return [];
-    }
-
-    const rows = await sheet.getRows();
-    return rows.map((row) => ({
-      keywords: (row.Keywords || "")
-        .toLowerCase()
-        .split(",")
-        .map((k) => k.trim()),
-      answer: row.Answer || "",
+    keywordFaqs = data.values.slice(1).map((row) => ({
+      keywords: (row[0] || "").toLowerCase().split(",").map((k) => k.trim()).filter(Boolean),
+      answer: row[1] || "",
       source: "sheets-keywords",
     }));
+
+    console.log(`✅ Keyword FAQs loaded: ${keywordFaqs.length}`);
+    return keywordFaqs;
   } catch (err) {
-    console.error("❌ Error loading keyword FAQs from Sheets:", err.message);
+    console.error("❌ Failed to load keyword FAQs:", err.message);
     return [];
   }
 }
 
-export async function loadKeywordFaqs() {
-  keywordCache = await fetchKeywordFaqsFromSheets();
-  console.log(`✅ Keyword FAQs loaded: ${keywordCache.length} entries`);
-  return keywordCache;
-}
-
-export async function findKeywordFaq(query) {
+/** Match keyword FAQ with fuzzy fallback */
+export async function findKeywordFaq(query, sheetId, apiKey) {
   if (!query || !query.trim()) return null;
-  if (!keywordCache.length) await loadKeywordFaqs();
+  if (!keywordFaqs.length) await loadKeywordFaqs(sheetId, apiKey);
 
   const lower = query.toLowerCase();
-  for (const item of keywordCache) {
+
+  // 1. Exact inclusion
+  for (const item of keywordFaqs) {
     if (item.keywords.some((kw) => lower.includes(kw))) {
-      return { answer: item.answer, matched: item.keywords, source: item.source };
+      return { ...item, matched: item.keywords, matchType: "exact" };
     }
+  }
+
+  // 2. Fuzzy similarity
+  let best = null;
+  for (const item of keywordFaqs) {
+    for (const kw of item.keywords) {
+      const score = stringSimilarity.compareTwoStrings(lower, kw);
+      if (!best || score > best.score) best = { item, kw, score };
+    }
+  }
+  if (best && best.score >= 0.6) {
+    return { answer: best.item.answer, matched: [best.kw], score: best.score, source: "sheets-fuzzy", matchType: "fuzzy" };
   }
   return null;
 }
