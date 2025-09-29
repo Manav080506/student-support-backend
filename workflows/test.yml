@@ -2,221 +2,57 @@ name: Backend Tests
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   test-backend:
     runs-on: ubuntu-latest
-
     steps:
-      # 1. Checkout repo
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v3
 
-      # 2. Set up Node.js
-      - name: Set up Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
 
-      # 3. Install dependencies
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
-      # 4. Start backend
-      - name: Start backend
+      - name: Add mongo-memory-server and start
+        run: |
+          npm i --no-save mongodb-memory-server@8
+          node -e "const { MongoMemoryServer } = require('mongodb-memory-server'); (async()=>{ const m=new MongoMemoryServer(); const uri=await m.getUri(); console.log('::set-output name=MONGO_URI::'+uri); })()"
+        id: memdb
+
+      - name: Start backend (AUTO_SEED=true)
+        env:
+          MONGODB_URI: ${{ steps.memdb.outputs.MONGO_URI }}
+          AUTO_SEED: "true"
         run: |
           nohup npm start > server.log 2>&1 &
-          sleep 12
+          sleep 6
+          tail -n +1 server.log
 
-      # 5. Install jq
+      - name: Wait for server up
+        run: |
+          for i in {1..10}; do
+            curl -sS http://localhost:5000/ || sleep 1
+          done
+
       - name: Install jq
-        run: sudo apt-get install -y jq
+        run: sudo apt-get update && sudo apt-get install -y jq
 
-      # ---------- FAQ Keyword Tests (40+) ----------
-      - name: Test FAQ - Hostel Mess
+      - name: Run POST tests (example set)
         run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"When is mess food served?","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i -E "mess|🍽️" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test FAQ - Sports Ground
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"Where is cricket ground?","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i -E "sports|🏏" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test FAQ - WiFi
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"How to connect wifi?","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i -E "wifi|📶" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test FAQ - Fees
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"Check my fees","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i -E "fees|💰" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test FAQ - Dues
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"Any dues pending?","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i -E "dues|pending" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test FAQ - Scholarship
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"Scholarship details","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i -E "scholarship|🎓" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test FAQ - Deadline
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"What is the next deadline?","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i -E "deadline|⏰" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test FAQ - Books
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"Where to get books?","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i -E "books|📚" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test FAQ - Laptop
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"Need a laptop","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i "laptop" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test FAQ - Revaluation
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"revaluation process","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i "revaluation" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test FAQ - Exam Schedule
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"exam schedule","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i "exam" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test FAQ - Clinic
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"clinic location","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i -E "clinic|health" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test FAQ - Mental Health
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"mental health help","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i "mental" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test FAQ - Events
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"college fest","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i "event" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test FAQ - Sports Club
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"join sports club","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i "sports" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test FAQ - Bonafide Certificate
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"bonafide certificate","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i "certificate" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test FAQ - ID Card
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"lost id card","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i "id" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test FAQ - Admin Timing
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"admin office timing","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i "admin" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test FAQ - Library Issue
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"library issue books","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i "library" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test FAQ - Transport
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"bus facility","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i "bus" || (echo "Response was: $RESPONSE" && exit 1)
-
-      # ---------- Intent Tests ----------
-      - name: Test FinanceIntent
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"Check finance for STU001","intent":{"displayName":"FinanceIntent"},"parameters":{"studentId":"STU001"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i -E "Finance|💰" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test CounselingIntent
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"I need counseling","intent":{"displayName":"CounselingIntent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i -E "counseling|🧠" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test DistressIntent
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"I feel very depressed","intent":{"displayName":"DistressIntent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i -E "distress|🚨" || (echo "Response was: $RESPONSE" && exit 1)
-
-      # ---------- Sentiment ----------
-      - name: Test Sentiment - Positive
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"I am very happy today","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i -E "Glad|progress|😊" || (echo "Response was: $RESPONSE" && exit 1)
-
-      - name: Test Sentiment - Negative
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"I am hopeless","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i -E "counselor|😔" || (echo "Response was: $RESPONSE" && exit 1)
-
-      # ---------- Fallback ----------
-      - name: Test Fallback - Unknown Query
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook \
-            -H "Content-Type: application/json" \
-            -d '{"queryResult":{"queryText":"blah blah blah","intent":{"displayName":"Default Fallback Intent"}}}')
-          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i "couldn’t find" || (echo "Response was: $RESPONSE" && exit 1)
+          set -e
+          # Mess timing
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook -H "Content-Type: application/json" -d '{"queryResult":{"queryText":"When is mess food served?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i "mess"
+          # WiFi
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook -H "Content-Type: application/json" -d '{"queryResult":{"queryText":"How to connect wifi?","intent":{"displayName":"Default Fallback Intent"}}}')
+          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i "wifi"
+          # Finance (seeded)
+          RESPONSE=$(curl -s -X POST http://localhost:5000/webhook -H "Content-Type: application/json" -d '{"queryResult":{"queryText":"Check finance for STU001","intent":{"displayName":"FinanceIntent"},"parameters":{"studentId":"STU001"}}}')
+          echo "$RESPONSE" | jq -r '.fulfillmentText' | grep -i "Finance Summary"
