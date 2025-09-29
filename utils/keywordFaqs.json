@@ -1,0 +1,82 @@
+[
+  {
+    "Keywords": "mess, food, meal, hostel",
+    "Answer": "🍽️ Hostel mess timings are: Breakfast 7–9 AM, Lunch 12–2 PM, Dinner 7–9 PM."
+  },
+  {
+    "Keywords": "wifi, internet, network, login",
+    "Answer": "📶 Campus WiFi login is your student email and password."
+  },
+  {
+    "Keywords": "library, books, timings, study",
+    "Answer": "📚 Library is open from 8 AM to 8 PM on weekdays, and 9 AM to 5 PM on weekends."
+  },
+  {
+    "Keywords": "library fine, overdue, penalty",
+    "Answer": "⚠️ Library fine is ₹10 per day for overdue books."
+  },
+  {
+    "Keywords": "bus, transport, pass",
+    "Answer": "🚌 Bus pass can be collected from the admin office, valid for one semester."
+  },
+  {
+    "Keywords": "scholarship, financial aid, funding",
+    "Answer": "🎓 Scholarships are available based on merit and income. Apply before the official deadline."
+  },
+  {
+    "Keywords": "exam, deadline, schedule, timetable",
+    "Answer": "📝 Upcoming exam deadlines are published on the exam portal under 'Notices'."
+  },
+  {
+    "Keywords": "counseling, stress, mental health, talk",
+    "Answer": "🧠 Counseling services are available. A counselor will contact you shortly if you request support."
+  },
+  {
+    "Keywords": "distress, help, depressed, unsafe, urgent",
+    "Answer": "🚨 If you’re in distress, please call 📞 1800-599-0019 immediately. You are not alone."
+  },
+  {
+    "Keywords": "finance, fees, due, payment, pending",
+    "Answer": "💰 Your pending fees can be checked using your Student ID in the Finance dashboard."
+  },
+  {
+    "Keywords": "marketplace, buy, sell, items, books",
+    "Answer": "🛍️ You can buy and sell second-hand items like books, calculators, and hostel essentials in the marketplace."
+  },
+  {
+    "Keywords": "mentor, guidance, senior, connect",
+    "Answer": "🤝 Mentorship is available. You can connect to a senior in your field for guidance."
+  },
+  {
+    "Keywords": "mentee, student report, mentee details",
+    "Answer": "📑 Mentors can check mentee performance, attendance, and marks from the Mentor dashboard."
+  },
+  {
+    "Keywords": "parent, child progress, report, status",
+    "Answer": "👨‍👩‍👧 Parents can view their child’s fees, marks, and attendance from the Parent dashboard."
+  },
+  {
+    "Keywords": "reminder, notification, alert",
+    "Answer": "⏰ You can view your reminders and notifications in the Reminder dashboard."
+  },
+  {
+    "Keywords": "sports, cricket, football, ground",
+    "Answer": "🏏 The sports ground is open daily from 6 AM to 8 PM for cricket, football, and other activities."
+  },
+  {
+    "Keywords": "hostel, warden, complaint",
+    "Answer": "🏠 Hostel issues can be reported to your warden, or logged online in the complaint portal."
+  },
+  {
+    "Keywords": "medical, hospital, health, clinic",
+    "Answer": "🏥 The campus health center is open 24/7 for emergencies, with doctors available 9 AM–6 PM."
+  },
+  {
+    "Keywords": "placement, jobs, internships, career",
+    "Answer": "💼 Placement cell provides job opportunities and internships. Check the Career Portal for updates."
+  },
+  {
+    "Keywords": "events, fest, cultural, technical",
+    "Answer": "🎉 Cultural and technical fests are held every semester. Watch out for circulars and posters."
+  }
+]
